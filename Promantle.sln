@@ -1,0 +1,30 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Promantle", "Promantle\Promantle.csproj", "{EA18AB35-AACB-44F8-8A5A-95DD9FF1CBBB}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_Info", "_Info", "{DFA67A59-D086-4870-921B-BE3741CD10FC}"
+	ProjectSection(SolutionItems) = preProject
+		.gitignore = .gitignore
+		LICENSE = LICENSE
+		README.md = README.md
+		StartPostgres_Win.ps1 = StartPostgres_Win.ps1
+	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PromantleTests", "PromantleTests\PromantleTests.csproj", "{E2CD28AF-8045-4221-B7F6-13A3EE5D2EB1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EA18AB35-AACB-44F8-8A5A-95DD9FF1CBBB}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EA18AB35-AACB-44F8-8A5A-95DD9FF1CBBB}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EA18AB35-AACB-44F8-8A5A-95DD9FF1CBBB}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EA18AB35-AACB-44F8-8A5A-95DD9FF1CBBB}.Release|Any CPU.Build.0 = Release|Any CPU
+		{E2CD28AF-8045-4221-B7F6-13A3EE5D2EB1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{E2CD28AF-8045-4221-B7F6-13A3EE5D2EB1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{E2CD28AF-8045-4221-B7F6-13A3EE5D2EB1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{E2CD28AF-8045-4221-B7F6-13A3EE5D2EB1}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
