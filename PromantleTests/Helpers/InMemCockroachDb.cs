@@ -232,8 +232,11 @@ CREATE DATABASE IF NOT EXISTS testDb;");
         // wipe and recreate basic DBs
         cmd.CommandText = @"
 DROP DATABASE IF EXISTS testDb;
+DROP SCHEMA IF EXISTS triangles;
 
-CREATE DATABASE IF NOT EXISTS testDb;";
+CREATE DATABASE IF NOT EXISTS testDb;
+CREATE SCHEMA IF NOT EXISTS triangles;
+";
         cmd.ExecuteNonQuery();
     }
 }

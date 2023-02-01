@@ -18,8 +18,9 @@ public class DatabaseConnection : ITableAdaptor
 
     public DatabaseConnection(int port, string tableName)
     {
-        ConnectionString = $"Server=127.0.0.1;Port={port};Database=testDb;User Id=unit;Password=test;Include Error Detail=true;CommandTimeout=360;SSL Mode=Require;Trust Server Certificate=true;";
+        ConnectionString = $"Server=127.0.0.1;Port={port};Database=defaultdb;User Id=unit;Password=test;Include Error Detail=true;CommandTimeout=10;SSL Mode=Require;Trust Server Certificate=true;";
         BaseTableName = tableName;
+        Console.WriteLine($"Connection: table={BaseTableName}; str='{ConnectionString}'");
     }
 
     /// <summary>
@@ -47,9 +48,7 @@ SELECT EXISTS (
 
         using var cmd = BuildCmd(queryText, parameters, conn);
 
-        var result = cmd.ExecuteScalar();
-        conn.Close();
-        return result;
+        return cmd.ExecuteScalar();
     }
 
     /// <summary>Read multiple simple values from a parametric query</summary>
@@ -76,7 +75,7 @@ SELECT EXISTS (
 
     private static NpgsqlCommand BuildCmd(string queryText, object? parameters, NpgsqlConnection conn)
     {
-        using var cmd = new NpgsqlCommand(queryText, conn);
+        var cmd = new NpgsqlCommand(queryText, conn);
 
         if (parameters == null) return cmd;
         
@@ -134,14 +133,14 @@ SELECT EXISTS (
         var sb = new StringBuilder();
         
         sb.Append("CREATE TABLE ");
-        sb.Append(synthName);
+        sb.Append($"{SchemaName}.{synthName}");
         sb.AppendLine("(");
-        sb.AppendLine("    position INT8 not null primary key,"); // basic position (INT8 = Int64 = long)
+        sb.AppendLine("    position INT8 not null primary key"); // basic position (INT8 = Int64 = long)
 
         foreach (var agg in aggregates)
         {
-            sb.AppendLine($"    {agg.Name}{CountPostfix} INT8,");       // count of values that are summed here
-            sb.AppendLine($"    {agg.Name}{ValuePostfix} {agg.Type},"); // the summed value
+            sb.AppendLine($",   {agg.Name}{CountPostfix} INT8");       // count of values that are summed here
+            sb.AppendLine($",   {agg.Name}{ValuePostfix} {agg.Type}"); // the summed value
         }
         
         sb.Append(");"); // close definition

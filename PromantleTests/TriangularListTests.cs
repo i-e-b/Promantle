@@ -7,6 +7,39 @@ namespace PromantleTests;
 [TestFixture]
 public class TriangularListTests:DbTestBase
 {
+    [Test]
+    public void the_database_hooks_work()
+    {
+        ResetDatabase();
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "test1");
+        
+        // Create table
+        var written = storage.EnsureTableForRank(1,1, new BasicColumn("test","int"));
+        Console.WriteLine($"Wrote DB: {written}");
+        
+        // Write single value
+        storage.WriteAtRank(1, 1, "test", 2, 3, 4);
+        
+        // Read single value back
+        var value = storage.ReadAtRank(1,1, "test", 2);
+        Assert.That(value?.Value, Is.EqualTo(4));
+        Assert.That(value?.Count, Is.EqualTo(3));
+        
+        // More values
+        storage.WriteAtRank(1, 1, "test", 3, 4, 5);
+        storage.WriteAtRank(1, 1, "test", 4, 5, 6);
+        storage.WriteAtRank(1, 1, "test", 5, 6, 7);
+        
+        // Read multiple values back
+        var values = storage.ReadWithRank(1,1, "test", 2, 4).ToList();
+        Assert.That(values.Count, Is.EqualTo(3));
+        Assert.That(values[0].Value, Is.EqualTo(4));
+        Assert.That(values[0].Count, Is.EqualTo(3));
+        Assert.That(values[1].Value, Is.EqualTo(5));
+        Assert.That(values[1].Count, Is.EqualTo(4));
+        Assert.That(values[2].Value, Is.EqualTo(6));
+        Assert.That(values[2].Count, Is.EqualTo(5));
+    }
 
     [Test]
     public void can_create_a_new_list_with_functions()
