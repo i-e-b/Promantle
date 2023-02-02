@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
+using System.Reflection;
 using System.Text;
 using DiskQueue;
 
@@ -19,7 +20,7 @@ public abstract class PersistentProcessBase
 
     protected PersistentProcessBase(string processName)
     {
-        _queueName = Path.Combine(Path.GetTempPath(), $"pidQ_{processName}");
+        _queueName = Path.Combine(Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location)!, $"pidQ_{processName}");
     }
 
     /// <summary>

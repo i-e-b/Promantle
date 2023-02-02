@@ -32,6 +32,10 @@ public class TriangularList<TK, TV>
     private readonly Dictionary<string, Aggregator> _aggregateByName;
     private readonly Dictionary<string, Rank> _ranksByName;
     private readonly Dictionary<int, Rank> _ranksByNumber;
+    private readonly int _rankCount;
+    
+    /// <summary> Unique ID for rank-zero values </summary>
+    private long _nextZero;
 
     /// <summary>
     /// For a given item, give a 'position' value.
@@ -58,6 +62,19 @@ public class TriangularList<TK, TV>
         /// Name of the aggregation, used for querying
         /// </summary>
         public string Name = "";
+        
+        /// <summary>
+        /// Type to be used in the database
+        /// </summary>
+        public string StorageType = "";
+        
+        /// <summary>
+        /// Data type
+        /// </summary>
+        public Type? DataType;
+        
+        public abstract object? SelectValue(object? dataObject);
+        public abstract object? CombineValues(object? a, object? b);
     }
 
     /// <summary>
@@ -68,10 +85,27 @@ public class TriangularList<TK, TV>
         public readonly Func<TV, TA> Select;
         public readonly Func<TA, TA, TA> Combine;
 
-        public Aggregator(Func<TV, TA> select, Func<TA, TA, TA> combine)
+        public Aggregator(Func<TV, TA> select, Func<TA, TA, TA> combine, string storageType)
         {
             Select = select;
             Combine = combine;
+            StorageType = storageType;
+            DataType = typeof(TA);
+        }
+
+        public override object? SelectValue(object? dataObject)
+        {
+            if (dataObject is not TV value) throw new Exception($"Incorrect type: dataObject should be '{typeof(TV).Name}', but was {dataObject?.GetType().Name ?? "<null>"}");
+            
+            return Select(value);
+        }
+
+        public override object? CombineValues(object? a, object? b)
+        {
+            if (a is not TA valueA) throw new Exception($"Incorrect type: 'a' should be '{typeof(TA).Name}', but was {a?.GetType().Name ?? "<null>"}");
+            if (b is not TA valueB) throw new Exception($"Incorrect type: 'b' should be '{typeof(TA).Name}', but was {b?.GetType().Name ?? "<null>"}");
+            
+            return Combine(valueA, valueB);
         }
     }
 
@@ -101,6 +135,11 @@ public class TriangularList<TK, TV>
             RankFunction = rankFunction;
             Name = name;
         }
+
+        public Rank Renumber(int rankNum)
+        {
+            return new Rank(rankNum, Name, RankFunction);
+        }
     }
 
     /// <summary>
@@ -115,22 +154,87 @@ public class TriangularList<TK, TV>
     /// </summary>
     public TriangularList(ITableAdaptor storage, KeyFunction keyFunction, List<Rank> orderedRanks, Dictionary<string, Aggregator> aggregateByName)
     {
+        if (orderedRanks.Count < 1) throw new Exception("Triangular list must have at least one rank");
+        
         _storage = storage;
         _keyFunction = keyFunction;
 
-        // Build dictionaries from the list (with our own preferred ranking numbers)
+        // Build dictionaries from the list
+        // We use our own rank numbers, user can query only by name.
         _ranksByName = new Dictionary<string, Rank>();
         _ranksByNumber = new Dictionary<int, Rank>();
-        throw new NotImplementedException();
+        _aggregateByName = new Dictionary<string, Aggregator>();
+
+        var rankNum = 1;
+        foreach (var rank in orderedRanks)
+        {
+            var selfRank = rank.Renumber(rankNum);
+            _ranksByName.Add(rank.Name, selfRank);
+            _ranksByNumber.Add(rankNum, selfRank);
+            rankNum++;
+        }
+        
+        var aggregateNames = new BasicColumn[aggregateByName.Count];
+        var aggregateIdx = 0;
+        foreach (var kvp in aggregateByName)
+        {
+            aggregateNames[aggregateIdx++] = new BasicColumn(kvp.Key, kvp.Value.StorageType);
+            _aggregateByName.Add(kvp.Key, kvp.Value);
+        }
+        
+        // ensure the various tables
+        _rankCount = _ranksByNumber.Count;
+        for (int rank = 0; rank <= _rankCount; rank++)
+        {
+            _storage.EnsureTableForRank(rank, _rankCount, aggregateNames);
+        }
+        
+        _nextZero = _storage.MaxPosition(0, _rankCount) + 1;
     }
 
     /// <summary>
-    /// Write a new item to the list's storage,
-    /// and update aggregations
+    /// Write a new item to the list's storage, and update aggregations.
+    /// This will immediately update all aggregations.
     /// </summary>
-    public void WriteItem(TV item)
+    /// <returns>Number of calculations made</returns>
+    public int WriteItem(TV item)
     {
-        throw new NotImplementedException();
+        var calcCount = 0;
+        
+        // Get the key out of the value
+        var key = _keyFunction(item);
+        var zeroRankIndex = _nextZero++;
+        
+        // for each aggregation, go through the ranks and re-sum data
+        foreach (var kvp in _aggregateByName)
+        {
+            var aggName = kvp.Key;
+            var aggCombine = kvp.Value.CombineValues;
+            
+            // Write rank zero data
+            var rzObject = kvp.Value.SelectValue(item);
+            var parentPos = _ranksByNumber[1].RankFunction(key);
+            _storage.WriteAtRank(0, _rankCount, aggName, parentPos, zeroRankIndex, 1, rzObject);
+            
+            // Work up through all ranks, re-aggregating the data
+            for (int childRank = 0; childRank < _rankCount; childRank++)
+            {
+                var parentRank = childRank+1;
+                var grandparentRank = parentRank+1;
+                
+                // aggregate data under a parent
+                parentPos = _ranksByNumber[parentRank].RankFunction(key);
+                var child = _storage.ReadWithParentRank(childRank, _rankCount, aggName, parentPos).ToList();
+                calcCount += child.Count;
+                var newCount = child.Sum(av => av.Count);
+                var newAggValue = child.Select(av=>av.Value).Aggregate((a,b) => aggCombine(a,b));
+                
+                // write back
+                var grandparentPos = grandparentRank <= _rankCount ? _ranksByNumber[grandparentRank].RankFunction(key) : 0;
+                _storage.WriteAtRank(parentRank, _rankCount, aggName, grandparentPos, parentPos, newCount, newAggValue);
+            }
+        }
+        return calcCount;
     }
 
     /// <summary>
@@ -145,9 +249,19 @@ public class TriangularList<TK, TV>
         if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
         if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
 
-        // TODO: read the single aggregation value at the given rank
+        // Read the value
+        var rankInfo = _ranksByName[rank];
+        var position = rankInfo.RankFunction(target);
+        var value = _storage.ReadAtRank(rankInfo.RankNumber, _rankCount, aggregation, position);
+        
+        if (value is null) return default;
 
-        throw new NotImplementedException();
+        if (value.Value is not TA final)
+        {
+            throw new Exception($"Expected type '{typeof(TA).Name}', but aggregate '{aggregation}' at rank '{rank}' has type '{value.Value?.GetType().Name ?? "<null>"}'");
+        }
+        
+        return final;
     }
 
     /// <summary>
@@ -163,9 +277,28 @@ public class TriangularList<TK, TV>
         if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
         if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
 
-        // TODO: read all the integral rank values, and read the aggregations
+        if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
+        if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
 
-        throw new NotImplementedException();
+        // Determine search values
+        var rankInfo = _ranksByName[rank];
+        var startPos = rankInfo.RankFunction(start);
+        var endPos = rankInfo.RankFunction(end);
+        if (endPos < startPos) throw new Exception("Start position is after end position");
+        
+        // Read the value
+        var value = _storage.ReadWithRank(rankInfo.RankNumber, _rankCount, aggregation, startPos, endPos).ToList();
+        
+        if (value.Count < 1) return Array.Empty<TA>();
+        
+        // Check types are as expected
+        if (value[0].Value is not TA)
+        {
+            throw new Exception($"Expected type '{typeof(TA).Name}', but aggregate '{aggregation}' at rank '{rank}' has type '{value[0].Value?.GetType().Name ?? "<null>"}'");
+        }
+        
+        // Convert to the correct type
+        return value.Where(av => av.Value is not null).Select(av => (TA)av.Value!);
     }
 }
 
@@ -187,12 +320,18 @@ public class TriangularListBuilder<TK, TV>
         _ranksByNumber = new Dictionary<int, TriangularList<TK, TV>.Rank>();
     }
 
+    /// <summary>
+    /// Set the storage adaptor
+    /// </summary>
     public TriangularListBuilder<TK, TV> UsingStorage(ITableAdaptor storage)
     {
         _storage = storage;
         return this;
     }
 
+    /// <summary>
+    /// Set the function that pulls the key value out of data items
+    /// </summary>
     public TriangularListBuilder<TK, TV> KeyOn(TriangularList<TK, TV>.KeyFunction keyFunction)
     {
         if (_keyFunction is null) _keyFunction = keyFunction;
@@ -218,11 +357,12 @@ public class TriangularListBuilder<TK, TV>
     /// <param name="name">Name of the aggregation, for querying</param>
     /// <param name="selector">Function to read an initial value from stored items</param>
     /// <param name="combiner">Function to aggregate two values (which may be aggregates themselves), returning a third value of the same type</param>
-    public TriangularListBuilder<TK, TV> Aggregate<TA>(string name, Func<TV, TA> selector, Func<TA, TA, TA> combiner)
+    /// <param name="storageType">Database column type to store the values</param>
+    public TriangularListBuilder<TK, TV> Aggregate<TA>(string name, Func<TV, TA> selector, Func<TA, TA, TA> combiner, string storageType)
     {
         if (_aggregateByName.ContainsKey(name)) throw new Exception($"Duplicated aggregation '{name}'");
 
-        _aggregateByName.Add(name, new TriangularList<TK, TV>.Aggregator<TA>(selector, combiner));
+        _aggregateByName.Add(name, new TriangularList<TK, TV>.Aggregator<TA>(selector, combiner, storageType));
         return this;
     }
 

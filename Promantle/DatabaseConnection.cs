@@ -95,10 +95,23 @@ SELECT EXISTS (
         // TODO: protect aggregateName from injection
         var synthName = SynthName(rank, rankCount);
         return SimpleSelectMany<AggregateValue>(
-            $"SELECT {aggregateName}{CountPostfix}, {aggregateName}{ValuePostfix}" +
+            $"SELECT position, parentPosition, COALESCE({aggregateName}{CountPostfix},0), {aggregateName}{ValuePostfix}" +
             $" FROM {SchemaName}.{synthName}" +
             "  WHERE position BETWEEN :start AND :end;",
-            new {start, end}, rdr => new AggregateValue{Count = rdr.GetInt64(0), Value = rdr.GetValue(1)});
+            new {start, end},
+            ReadAggregateValue);
+    }
+
+    public IEnumerable<AggregateValue> ReadWithParentRank(int rank, int rankCount, string aggregateName, long parentPosition)
+    {
+        // TODO: protect aggregateName from injection
+        var synthName = SynthName(rank, rankCount);
+        return SimpleSelectMany<AggregateValue>(
+            $"SELECT position, parentPosition, COALESCE({aggregateName}{CountPostfix},0), {aggregateName}{ValuePostfix}" +
+            $" FROM {SchemaName}.{synthName}" +
+            "  WHERE parentPosition = :parentPosition;",
+            new {parentPosition},
+            ReadAggregateValue);
     }
 
     public AggregateValue? ReadAtRank(int rank, int rankCount, string aggregateName, long position)
@@ -106,22 +119,61 @@ SELECT EXISTS (
         // TODO: protect aggregateName from injection
         var synthName = SynthName(rank, rankCount);
         return SimpleSelectMany<AggregateValue>(
-            $"SELECT {aggregateName}{CountPostfix}, {aggregateName}{ValuePostfix}" +
+            $"SELECT position, parentPosition, {aggregateName}{CountPostfix}, {aggregateName}{ValuePostfix}" +
             $" FROM {SchemaName}.{synthName}" +
             "  WHERE position = :position" +
             "  LIMIT 1;",
-            new {position}, rdr => new AggregateValue{Count = rdr.GetInt64(0), Value = rdr.GetValue(1)}).FirstOrDefault();
+            new {position}, 
+            ReadAggregateValue)
+            .FirstOrDefault();
     }
 
-    public void WriteAtRank(int rank, int rankCount, string aggregateName, long position, long count, object value)
+    private static AggregateValue ReadAggregateValue(IDataReader rdr)
+    {
+        return new AggregateValue{Position = rdr.GetInt64(0), ParentPosition = rdr.GetInt64(1), Count = rdr.GetInt64(2), Value = rdr.GetValue(3)};
+    }
+
+    public void WriteAtRank(int rank, int rankCount, string aggregateName, long parentPosition, long position, long count, object? value)
     {
         var synthName = SynthName(rank, rankCount);
         var countCol = $"{aggregateName}{CountPostfix}";
         var valueCol = $"{aggregateName}{ValuePostfix}";
-        SimpleSelect($"UPSERT INTO {SchemaName}.{synthName}" +
-                     $"       ( position, {countCol}, {valueCol})" +
-                     " VALUES (:position, :count,     :value)",
-            new {position, count, value});
+        
+        var what = SimpleSelect($"SELECT COUNT(*) FROM {SchemaName}.{synthName} WHERE position = :position;", new {position});
+        var existing = what as Int64?;
+
+        if (existing == 0) // insert
+        {
+            SimpleSelect($"INSERT INTO {SchemaName}.{synthName}" +
+                         $"       ( position, parentPosition,  {countCol}, {valueCol})" +
+                         " VALUES (:position, :parentPosition, :count,     :value)",
+                new {position, parentPosition, count, value});
+        } else if (existing == 1) // update
+        {
+            SimpleSelect($"UPDATE {SchemaName}.{synthName}" +
+                         " SET parentPosition = :parentPosition," +
+                         $"    {countCol} = :count," +
+                         $"    {valueCol} = :value" +
+                         " WHERE position = :position;",
+                new {position, parentPosition, count, value});
+        }
+        else // error
+        {
+            throw new Exception($"Rank position should be 0 or 1, but was {what} ({what?.GetType().Name})");
+        }
+    }
+
+    public long MaxPosition(int rank, int rankCount)
+    {
+        try
+        {
+            var synthName = SynthName(rank, rankCount);
+            return SimpleSelect($"SELECT MAX(position) FROM {SchemaName}.{synthName};", new { }) as long? ?? 0;
+        }
+        catch
+        {
+            return 0;
+        }
     }
 
     public bool EnsureTableForRank(int rank, int rankCount, params BasicColumn[] aggregates)
@@ -132,17 +184,21 @@ SELECT EXISTS (
 
         var sb = new StringBuilder();
         
-        sb.Append("CREATE TABLE ");
-        sb.Append($"{SchemaName}.{synthName}");
+        sb.Append($"CREATE TABLE {SchemaName}.{synthName}");
         sb.AppendLine("(");
         sb.AppendLine("    position INT8 not null primary key"); // basic position (INT8 = Int64 = long)
+        sb.AppendLine(",   parentPosition INT8"); // position in the next (more aggregated) rank
 
         foreach (var agg in aggregates)
         {
+            if (agg is null) throw new Exception("Invalid aggregation (null value in aggregates)");
+            if (string.IsNullOrWhiteSpace(agg.Name) || string.IsNullOrWhiteSpace(agg.Type)) throw new Exception($"Invalid aggregate: '{agg.Name ?? "<null>"}' has type '{agg.Type ?? "<null>"}'");
             sb.AppendLine($",   {agg.Name}{CountPostfix} INT8");       // count of values that are summed here
             sb.AppendLine($",   {agg.Name}{ValuePostfix} {agg.Type}"); // the summed value
         }
         
+        sb.AppendLine(",   INDEX index_my_pos (position)");
+        sb.AppendLine(",   INDEX index_parent (parentPosition)");
         sb.Append(");"); // close definition
         
         var query = sb.ToString();

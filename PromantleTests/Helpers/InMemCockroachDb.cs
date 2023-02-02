@@ -20,7 +20,7 @@ public class InMemCockroachDb: PersistentProcessBase, IDisposable
     private readonly Dictionary<string,PlatformSetting> _possiblePaths = new()
     {
         {"/usr/local/bin/cockroach", new PlatformSetting{Timeout = 500, TempFile = "/home/gitlab-runner/crdb_temp"}},
-        {@"C:\cockroach-windows\cockroach.exe", new PlatformSetting{Timeout=100, TempFile = GetRandomPath()}}
+        {@"C:\cockroach-windows\cockroach.exe", new PlatformSetting{Timeout=25, TempFile = GetRandomPath()}}
     };
 
     public InMemCockroachDb():base("cockroach")
@@ -65,7 +65,7 @@ public class InMemCockroachDb: PersistentProcessBase, IDisposable
         try
         {
             _instance.StandardInput.WriteLine("\\q\n");
-            var ended = _instance?.WaitForExit(2000) ?? false;
+            var ended = _instance?.WaitForExit(1500) ?? false;
             if (!ended)
             {
                 Console.WriteLine("Crdb did not end promptly!");
@@ -159,7 +159,7 @@ CREATE DATABASE IF NOT EXISTS testDb;");
         sw.Start();
         while ( ! File.Exists(markerFile))
         {
-            if (sw.Elapsed.TotalSeconds > 20) throw new Exception("Cockroach never came up?");
+            if (sw.Elapsed.TotalSeconds > 15) throw new Exception("Cockroach never came up?");
             Thread.Sleep(100);
         }
     }
@@ -225,18 +225,15 @@ CREATE DATABASE IF NOT EXISTS testDb;");
     /// </summary>
     public void ResetDatabase()
     {
-        using var conn = new NpgsqlConnection(@$"Server=127.0.0.1;Database=defaultdb;User Id=unit;Password=test;Port={LastValidSqlPort};Include Error Detail=true;Timeout=15;");
+        using var conn = new NpgsqlConnection(@$"Server=127.0.0.1;Database=defaultdb;User Id=unit;Password=test;Port={LastValidSqlPort};Include Error Detail=true;Timeout=3;");
         conn.Open();
         using var cmd = conn.CreateCommand();
 
         // wipe and recreate basic DBs
-        cmd.CommandText = @"
-DROP DATABASE IF EXISTS testDb;
-DROP SCHEMA IF EXISTS triangles;
-
-CREATE DATABASE IF NOT EXISTS testDb;
-CREATE SCHEMA IF NOT EXISTS triangles;
-";
+        cmd.CommandText = @"DROP SCHEMA IF EXISTS triangles CASCADE;";
+        cmd.ExecuteNonQuery();
+        
+        cmd.CommandText = @"CREATE SCHEMA IF NOT EXISTS triangles;";
         cmd.ExecuteNonQuery();
     }
 }
