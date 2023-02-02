@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace Promantle;
 
 public class AggregateValue
@@ -77,4 +79,9 @@ public interface ITableAdaptor
     /// <param name="rankCount">Total number of ranks in the triangular list</param>
     /// <returns>Max position, or zero</returns>
     long MaxPosition(int rank, int rankCount);
+
+    /// <summary>
+    /// Diagnostics. Write table info to the supplied StringBuilder
+    /// </summary>
+    void DumpTableForRank(StringBuilder sb, int rank, int rankCount);
 }

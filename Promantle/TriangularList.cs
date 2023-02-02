@@ -1,4 +1,6 @@
-﻿namespace Promantle;
+﻿using System.Text;
+
+namespace Promantle;
 
 
 /// <summary>
@@ -299,6 +301,22 @@ public class TriangularList<TK, TV>
         
         // Convert to the correct type
         return value.Where(av => av.Value is not null).Select(av => (TA)av.Value!);
+    }
+
+    /// <summary>
+    /// Output a diagnostic string of data stored
+    /// </summary>
+    public string DumpTables()
+    {
+        var sb = new StringBuilder(10_000);
+        
+        // Read the various tables
+        for (int rank = 0; rank <= _rankCount; rank++)
+        {
+            _storage.DumpTableForRank(sb, rank, _rankCount);
+        }
+        
+        return sb.ToString();
     }
 }
 

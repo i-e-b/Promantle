@@ -53,7 +53,7 @@ SELECT EXISTS (
 
     /// <summary>Read multiple simple values from a parametric query</summary>
     /// <remarks> Poor man's Dapper, here so we don't bring library dependencies with us. </remarks>
-    private IEnumerable<T> SimpleSelectMany<T>(string queryText, object? parameters, Func<IDataReader, T> select)
+    private IEnumerable<T> SimpleSelectMany<T>(string queryText, object? parameters, Func<IDataRecord, T> select)
     {
         using var conn = new NpgsqlConnection(ConnectionString);
         conn.Open();
@@ -128,7 +128,7 @@ SELECT EXISTS (
             .FirstOrDefault();
     }
 
-    private static AggregateValue ReadAggregateValue(IDataReader rdr)
+    private static AggregateValue ReadAggregateValue(IDataRecord rdr)
     {
         return new AggregateValue{Position = rdr.GetInt64(0), ParentPosition = rdr.GetInt64(1), Count = rdr.GetInt64(2), Value = rdr.GetValue(3)};
     }
@@ -174,6 +174,28 @@ SELECT EXISTS (
         {
             return 0;
         }
+    }
+
+    public void DumpTableForRank(StringBuilder sb, int rank, int rankCount)
+    {
+        var synthName = SynthName(rank, rankCount);
+        
+        sb.AppendLine();
+        sb.AppendLine(synthName);
+        SimpleSelectMany($"SELECT * FROM {SchemaName}.{synthName};", new{}, rdr => ReaderRowToString(sb, rdr));
+        
+        sb.AppendLine();
+    }
+
+    private int ReaderRowToString(StringBuilder sb, IDataRecord rdr)
+    {
+        var end = rdr.FieldCount;
+        for (int i = 0; i < end; i++)
+        {
+            sb.Append(rdr.GetName(i)+"="+rdr.GetValue(i)+"; ");
+        }
+        sb.AppendLine();
+        return end;
     }
 
     public bool EnsureTableForRank(int rank, int rankCount, params BasicColumn[] aggregates)
