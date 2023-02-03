@@ -1,4 +1,5 @@
-﻿using NUnit.Framework;
+﻿using System.Diagnostics;
+using NUnit.Framework;
 using Promantle;
 using PromantleTests.Helpers;
 #pragma warning disable CS8602
@@ -239,6 +240,8 @@ public class TriangularListTests:DbTestBase
     {
         ResetDatabase();
         var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "rangeTest");
+        var sw = new Stopwatch();
+        sw.Restart();
         
         var subject = TriangularList<DateTime, TestComplexType>
             .Create.UsingStorage(storage)
@@ -251,27 +254,41 @@ public class TriangularListTests:DbTestBase
             .Rank(4, "PerWeek",   DateTimeWeeks)
             .Build();
         
+        sw.Stop();
+        Console.WriteLine($"Initial setup took {sw.Elapsed};");
+        
         var hr = 60.0;
         var day = 1440.0;
         var opCount = 0;
         var baseDate = new DateTime(2020,5,5, 0,0,0, DateTimeKind.Utc);
 
+        sw.Restart();
         for (int i = 0; i < 10_000; i++) // 10_000 -> 30 years of data
         {
             opCount += subject.WriteItem(new TestComplexType(baseDate, i*hr + i,           1.01m, 2.50m));
             opCount += subject.WriteItem(new TestComplexType(baseDate, i*day + i*hr + i,   2.01m, 4.50m));
         }
+        sw.Stop();
         
-        Console.WriteLine($"Total operations: {opCount}"); // This really only get optimal as data size grows significantly
+        var rate = 10_000.0 / sw.Elapsed.TotalSeconds;
+        Console.WriteLine($"Writing data took {sw.Elapsed}; Total operations: {opCount}; {rate:0.0} op/second"); // This really only get efficient as data size grows significantly
         //     571'028 operations in triangular data (about 700x faster than naive)
         // 400'000'000 operations with naive re-calculation (20'000 recalculations, each with 2*n data-points -- assumes very efficient recalculation)
         
-        //Console.WriteLine(subject.DumpTables());
-
         // One year of data by week. Should be 52 items.
+        sw.Restart();
         var values = subject.ReadAggregateDataOverRange<decimal>("Spent", "PerWeek", new DateTime(2023,1,1,  0,0,0), new DateTime(2024,1,1, 0,0,0)).ToList();
+        sw.Stop();
+        Console.WriteLine($"Reading one year of aggregated data by week took {sw.Elapsed}");
         
-        Console.WriteLine(string.Join(", ", values));
+        
+        sw.Restart();
+        var data = subject.ReadDataOverRange<decimal>("Spent", "PerWeek", new DateTime(2023,1,1,  0,0,0), new DateTime(2024,1,1, 0,0,0)).ToList();
+        sw.Stop();
+        Console.WriteLine($"Reading one year of data-points aggregated by week took {sw.Elapsed}");
+        
+        Console.WriteLine("Values: "+string.Join(", ", values));
+        Console.WriteLine("Data points:\r\n    "+string.Join("\r\n    ", data));
         Assert.That(values.Count, Is.EqualTo(53));
     }
 

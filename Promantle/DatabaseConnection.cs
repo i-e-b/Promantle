@@ -40,6 +40,19 @@ SELECT EXISTS (
         return SimpleSelect(query, new { schema = schema.ToLowerInvariant(), name = name.ToLowerInvariant() }) as bool? == true;
     }
 
+    
+    /// <summary>Read a single value from a parametric query</summary>
+    /// <remarks> Poor man's Dapper, here so we don't bring library dependencies with us. </remarks>
+    private void SimpleExecute(string queryText, object? parameters)
+    {
+        using var conn = new NpgsqlConnection(ConnectionString);
+        conn.Open();
+
+        using var cmd = BuildCmd(queryText, parameters, conn);
+
+        cmd.ExecuteNonQuery();
+    }
+    
     /// <summary>Read a single value from a parametric query</summary>
     /// <remarks> Poor man's Dapper, here so we don't bring library dependencies with us. </remarks>
     private object? SimpleSelect(string queryText, object? parameters)
@@ -153,30 +166,11 @@ SELECT EXISTS (
         var synthName = SynthName(rank, rankCount);
         var countCol = $"{aggregateName}{CountPostfix}";
         var valueCol = $"{aggregateName}{ValuePostfix}";
-        
-        var existing = SimpleSelect($"SELECT COUNT(*) FROM {SchemaName}.{synthName} WHERE position = :position;", new {position}) as Int64?;
 
-        if (existing == 0) // insert
-        {
-            SimpleSelect($"INSERT INTO {SchemaName}.{synthName}" +
-                         $"       ( position, parentPosition,  lowerBound,  upperBound,  {countCol}, {valueCol})" +
-                         " VALUES (:position, :parentPosition, :lowerBound, :upperBound, :count,     :value)",
-                new {position, parentPosition, lowerBound, upperBound, count, value});
-        } else if (existing == 1) // update
-        {
-            SimpleSelect($"UPDATE {SchemaName}.{synthName}" +
-                         " SET parentPosition = :parentPosition," +
-                         "     lowerBound = :lowerBound,"+
-                         "     upperBound = :upperBound,"+
-                         $"    {countCol} = :count," +
-                         $"    {valueCol} = :value" +
-                         " WHERE position = :position;",
-                new {position, parentPosition, lowerBound, upperBound, count, value});
-        }
-        else // error
-        {
-            throw new Exception($"Rank position should be 0 or 1, but was '{existing}'");
-        }
+        SimpleExecute($"UPSERT INTO {SchemaName}.{synthName}" +
+                      $"       ( position, parentPosition,  lowerBound,  upperBound,  {countCol}, {valueCol})" +
+                      " VALUES (:position, :parentPosition, :lowerBound, :upperBound, :count,     :value)",
+            new { position, parentPosition, lowerBound, upperBound, count, value });
     }
 
     public long MaxPosition(int rank, int rankCount)

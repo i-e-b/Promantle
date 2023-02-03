@@ -379,12 +379,7 @@ public class TriangularList<TK, TV>
         if (value.LowerBound is not null && value.LowerBound is not TK) throw new Exception($"Expected key type '{typeof(TK).Name}', but key at rank '{rank}' has type '{value.LowerBound?.GetType().Name ?? "<null>"}'");
         
         // Build return structure
-        return new AggregateValue<TA, TK>{
-            Count = value.Count,
-            Value = final,
-            LowerBound = value.LowerBound is TK lb ? lb : default,
-            UpperBound = value.UpperBound is TK ub ? ub : default
-        };
+        return TypedAggregateValue<TA>(value);
     }
 
     /// <summary>
@@ -437,7 +432,42 @@ public class TriangularList<TK, TV>
     /// <returns>Multiple aggregate values that include the source value range and count at each point</returns>
     public IEnumerable<AggregateValue<TA, TK>> ReadDataOverRange<TA>(string aggregation, string rank, TK start, TK end)
     {
-        throw new NotImplementedException();
+        if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
+        if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
+
+        if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
+        if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
+
+        // Determine search values
+        var rankInfo = _ranksByName[rank];
+        var startPos = rankInfo.RankFunction(start);
+        var endPos = rankInfo.RankFunction(end);
+        if (endPos < startPos) throw new Exception("Start position is after end position");
+        
+        // Read the value
+        var value = _storage.ReadWithRank(rankInfo.RankNumber, _rankCount, aggregation, startPos, endPos).ToList();
+        
+        if (value.Count < 1) return Array.Empty<AggregateValue<TA, TK>>();
+        
+        // Check types are as expected
+        if (value[0].Value is not TA)
+        {
+            throw new Exception($"Expected type '{typeof(TA).Name}', but aggregate '{aggregation}' at rank '{rank}' has type '{value[0].Value?.GetType().Name ?? "<null>"}'");
+        }
+        
+        // Convert to the correct type
+        return value.Where(av => av.Value is not null).Select(TypedAggregateValue<TA>);
+    }
+
+    private AggregateValue<TA, TK> TypedAggregateValue<TA>(AggregateValue av)
+    {
+        return new AggregateValue<TA, TK>
+        {
+            Count = av.Count,
+            Value = NullCast<TA>(av.Value),
+            LowerBound = NullCast<TK>(av.LowerBound),
+            UpperBound = NullCast<TK>(av.UpperBound)
+        };
     }
 
     /// <summary>
