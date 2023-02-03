@@ -13,10 +13,11 @@ ranges of data at different levels of detail.
 
 * [x] Add ranks and aggregates
 * [x] Query points and ranges
-* [ ] Get the upper/lower range of a single data point
+* [x] Get the upper/lower range of a single data point
 * [ ] Demonstrate averages
 * [ ] Demonstrate different data types
 * [ ] Demonstrate different aggregates (max/min/..?)
+* [ ] Tests around very sparse data
 
 ```
 
@@ -28,13 +29,13 @@ A     \     :     \     :
 B      |    :      |    :
 C      +---  AE    |    :
 D      |    :      |    :
-E     /     :      |___  AJ
+E     /     :      |___  AJ               ↑
 F  \        :      |    :                 :
 G   |       :      |    :                 :
 H   +------  FJ    |    :                 : AN
 I   |       :      |    :                 :
 J  /        :  ___/     :                 :
-K    \      :       \   :
+K    \      :       \   :                 ↓
 L     |____  KN      |__ KN
 M     |     :        |  :
 N    /      :       /   :

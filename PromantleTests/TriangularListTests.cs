@@ -1,6 +1,7 @@
 ﻿using NUnit.Framework;
 using Promantle;
 using PromantleTests.Helpers;
+#pragma warning disable CS8602
 
 namespace PromantleTests;
 
@@ -14,11 +15,11 @@ public class TriangularListTests:DbTestBase
         var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "test1");
         
         // Create table
-        var written = storage.EnsureTableForRank(1,1, new BasicColumn("test","int"));
+        var written = storage.EnsureTableForRank(1,1, "INT", new BasicColumn("test","int"));
         Console.WriteLine($"Wrote DB: {written}");
         
         // Write single value
-        storage.WriteAtRank(1, 1, "test", 1, 2, 3, 4);
+        storage.WriteAtRank(1, 1, "test", 1, 2, 3, 4, 15, 20);
         
         // Read single value back
         var value = storage.ReadAtRank(1,1, "test", 2);
@@ -26,26 +27,37 @@ public class TriangularListTests:DbTestBase
         Assert.That(value?.Position, Is.EqualTo(2));
         Assert.That(value?.Count, Is.EqualTo(3));
         Assert.That(value?.Value, Is.EqualTo(4));
+        Assert.That(value?.LowerBound, Is.EqualTo(15));
+        Assert.That(value?.UpperBound, Is.EqualTo(20));
         
         // More values
-        storage.WriteAtRank(1, 1, "test", 2, 3, 4, 5);
-        storage.WriteAtRank(1, 1, "test", 2, 4, 5, 6);
-        storage.WriteAtRank(1, 1, "test", 2 ,5, 6, 7);
+        storage.WriteAtRank(rank: 1, rankCount: 1, aggregateName: "test", parentPosition: 2, position: 3, count: 4, value: 5, lowerBound: 25, upperBound: 30);
+        storage.WriteAtRank(1, 1, "test", 2, 4, 5, 6, 35, 40);
+        storage.WriteAtRank(1, 1, "test", 2 ,5, 6, 7, 45, 50);
         
         // Read multiple values back
         var values = storage.ReadWithRank(1,1, "test", 2, 4).ToList();
         Assert.That(values.Count, Is.EqualTo(3));
+        
         Assert.That(values[0].Value, Is.EqualTo(4));
         Assert.That(values[0].Count, Is.EqualTo(3));
         Assert.That(values[0].Position, Is.EqualTo(2));
+        Assert.That(values[0].LowerBound, Is.EqualTo(15));
+        Assert.That(values[0].UpperBound, Is.EqualTo(20));
         Assert.That(values[0].ParentPosition, Is.EqualTo(1));
+        
         Assert.That(values[1].Value, Is.EqualTo(5));
         Assert.That(values[1].Count, Is.EqualTo(4));
         Assert.That(values[1].Position, Is.EqualTo(3));
+        Assert.That(values[1].LowerBound, Is.EqualTo(25));
+        Assert.That(values[1].UpperBound, Is.EqualTo(30));
         Assert.That(values[1].ParentPosition, Is.EqualTo(2));
+        
         Assert.That(values[2].Value, Is.EqualTo(6));
         Assert.That(values[2].Count, Is.EqualTo(5));
         Assert.That(values[2].Position, Is.EqualTo(4));
+        Assert.That(values[2].LowerBound, Is.EqualTo(35));
+        Assert.That(values[2].UpperBound, Is.EqualTo(40));
         Assert.That(values[2].ParentPosition, Is.EqualTo(2));
         
         // Read back by parent
@@ -64,7 +76,7 @@ public class TriangularListTests:DbTestBase
         
         var subject = TriangularList<DateTime, TestComplexType>
             .Create.UsingStorage(storage)
-            .KeyOn(DateFromTestComplexType)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Rank(0, "PerHour", DateTimeHours)
@@ -81,7 +93,7 @@ public class TriangularListTests:DbTestBase
         
         var subject = TriangularList<DateTime, TestComplexType>
             .Create.UsingStorage(storage)
-            .KeyOn(DateFromTestComplexType)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Rank(0, "PerHour", DateTimeHours)
@@ -101,7 +113,7 @@ public class TriangularListTests:DbTestBase
         
         var subject = TriangularList<DateTime, TestComplexType>
             .Create.UsingStorage(storage)
-            .KeyOn(DateFromTestComplexType)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Rank(0, "PerHour", DateTimeHours)
@@ -113,12 +125,12 @@ public class TriangularListTests:DbTestBase
             RecordedDate = new DateTime(2020,5,5, 10,11,12, DateTimeKind.Utc)
         });
         
-        var value = subject.ReadAggregate<decimal>("Spent", "PerHour", new DateTime(2020,5,5, 10,10,32)); // should find it if in same hour
+        var value = subject.ReadAggregateDataAtPoint<decimal>("Spent", "PerHour", new DateTime(2020,5,5, 10,10,32)); // should find it if in same hour
         
         Assert.That(value, Is.Not.Null);
         Assert.That(value, Is.EqualTo(5.1m));
     }
-    
+
     [Test]
     public void can_read_a_range_over_a_single_scaled_value()
     {
@@ -127,7 +139,7 @@ public class TriangularListTests:DbTestBase
         
         var subject = TriangularList<DateTime, TestComplexType>
             .Create.UsingStorage(storage)
-            .KeyOn(DateFromTestComplexType)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Rank(0, "PerHour", DateTimeHours)
@@ -139,7 +151,7 @@ public class TriangularListTests:DbTestBase
             RecordedDate = new DateTime(2020,5,5, 10,11,12, DateTimeKind.Utc)
         });
         
-        var values = subject.ReadAggregateRange<decimal>("Spent", "PerHour", new DateTime(2020,1,1, 8,30,29), new DateTime(2021,1,1, 16,45,31)).ToList();
+        var values = subject.ReadAggregateDataOverRange<decimal>("Spent", "PerHour", new DateTime(2020,1,1, 8,30,29), new DateTime(2021,1,1, 16,45,31)).ToList();
         
         Assert.That(values.Count, Is.GreaterThan(0));
         Assert.That(values[0], Is.EqualTo(5.1m));
@@ -153,7 +165,7 @@ public class TriangularListTests:DbTestBase
         
         var subject = TriangularList<DateTime, TestComplexType>
             .Create.UsingStorage(storage)
-            .KeyOn(DateFromTestComplexType)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Rank(1, "PerMinute", DateTimeMinutes)
@@ -182,11 +194,44 @@ public class TriangularListTests:DbTestBase
         Console.WriteLine(subject.DumpTables());
         
         
-        var values = subject.ReadAggregateRange<decimal>("Spent", "PerHour", new DateTime(2020,1,1,  0,0,0), new DateTime(2021,1,1, 0,0,0)).ToList();
+        var values = subject.ReadAggregateDataOverRange<decimal>("Spent", "PerHour", new DateTime(2020,1,1,  0,0,0), new DateTime(2021,1,1, 0,0,0)).ToList();
         
         
         Assert.That(values.Count, Is.EqualTo(6));
         Assert.That(values[0], Is.EqualTo(10.04m));
+    }
+
+    [Test]
+    public void aggregated_data_can_be_read_with_count_and_source_key_range()
+    {
+        ResetDatabase();
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "rangeTest");
+        
+        var subject = TriangularList<DateTime, TestComplexType>
+            .Create.UsingStorage(storage)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
+            .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Rank(1, "PerHour",   DateTimeHours)
+            .Rank(2, "PerDay",    DateTimeDays)
+            .Build();
+        
+        var baseDate = new DateTime(2020,5,5, 0,0,0, DateTimeKind.Utc);
+
+        for (int i = 0; i < 48; i++) // one day in 30 min increments
+        {
+            subject.WriteItem(new TestComplexType(baseDate, i*30, 1.01m, 2.50m));
+        }
+        
+        var value = subject.ReadDataAtPoint<decimal>("Spent", "PerHour", new DateTime(2020,5,5,  5,0,0));
+        
+        Console.WriteLine(value?.ToString() ?? "<null>");
+        
+        Assert.That(value, Is.Not.Null);
+        Assert.That(value.Value, Is.EqualTo(2.02));
+        Assert.That(value.Count, Is.EqualTo(2));
+        Assert.That(value.LowerBound.ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 05:00"));
+        Assert.That(value.UpperBound.ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 05:30"));
     }
 
     [Test, Explicit("Takes around 6 minutes on my laptop.")]
@@ -197,7 +242,7 @@ public class TriangularListTests:DbTestBase
         
         var subject = TriangularList<DateTime, TestComplexType>
             .Create.UsingStorage(storage)
-            .KeyOn(DateFromTestComplexType)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Rank(1, "PerMinute", DateTimeMinutes)
@@ -224,7 +269,7 @@ public class TriangularListTests:DbTestBase
         //Console.WriteLine(subject.DumpTables());
 
         // One year of data by week. Should be 52 items.
-        var values = subject.ReadAggregateRange<decimal>("Spent", "PerWeek", new DateTime(2023,1,1,  0,0,0), new DateTime(2024,1,1, 0,0,0)).ToList();
+        var values = subject.ReadAggregateDataOverRange<decimal>("Spent", "PerWeek", new DateTime(2023,1,1,  0,0,0), new DateTime(2024,1,1, 0,0,0)).ToList();
         
         Console.WriteLine(string.Join(", ", values));
         Assert.That(values.Count, Is.EqualTo(53));
@@ -254,6 +299,13 @@ public class TriangularListTests:DbTestBase
     
     // --- Aggregate Classification Functions --- //
     private static DateTime DateFromTestComplexType(TestComplexType item) => item.RecordedDate;
+    private static void DateMinMax(DateTime a, DateTime b, out DateTime min, out DateTime max)
+    {
+        if (a > b) { min = b; max = a; }
+        else { min = a; max = b; }
+    }
+    
+    // --- Aggregate Data Functions --- //
     private static decimal SpentFromTestComplexType(TestComplexType item) => item.SpentAmount;
     private static decimal EarnedFromTestComplexType(TestComplexType item) => item.EarnedAmount;
     private static decimal DecimalSumAggregate(decimal a, decimal b) => a+b;

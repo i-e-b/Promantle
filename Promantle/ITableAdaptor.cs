@@ -8,6 +8,17 @@ public class AggregateValue
     /// Aggregated value
     /// </summary>
     public object? Value { get; set; }
+
+    /// <summary>
+    /// Bottom range of real data in this aggregation
+    /// </summary>
+    public object? LowerBound { get; set; }
+
+    /// <summary>
+    /// Top range of real data in this aggregation
+    /// </summary>
+    public object? UpperBound { get; set; }
+
     /// <summary>
     /// Count of zero-rank values aggregated at this point
     /// </summary>
@@ -17,11 +28,13 @@ public class AggregateValue
     /// Position in this rank
     /// </summary>
     public long Position { get; set; }
+    
     /// <summary>
     /// Position in next rank up (less detailed, more aggregated)
     /// </summary>
     public long ParentPosition { get; set; }
 }
+
 
 public class BasicColumn
 {
@@ -65,12 +78,14 @@ public interface ITableAdaptor
     /// <param name="position">Position value of this value</param>
     /// <param name="count">Total of zero-rank values that are aggregated here</param>
     /// <param name="value">Aggregated value to write</param>
-    void WriteAtRank(int rank, int rankCount, string aggregateName, long parentPosition, long position, long count, object? value);
+    /// <param name="lowerBound">Lowest key that is aggregated at this point</param>
+    /// <param name="upperBound">Highest key that is aggregated at this point</param>
+    void WriteAtRank(int rank, int rankCount, string aggregateName, long parentPosition, long position, long count, object? value, object? lowerBound, object? upperBound);
     
     /// <summary>
     /// Make sure rank table exists. Returns <c>true</c> if it needed to be created
     /// </summary>
-    bool EnsureTableForRank(int rank, int rankCount, params BasicColumn[] aggregateNames);
+    bool EnsureTableForRank(int rank, int rankCount, string keyType, params BasicColumn[] aggregateNames);
 
     /// <summary>
     /// Read the current maximum position number in a given rank table
