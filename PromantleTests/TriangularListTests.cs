@@ -145,7 +145,6 @@ public class TriangularListTests:DbTestBase
         Assert.That(values[0], Is.EqualTo(5.1m));
     }
     
-    
     [Test]
     public void can_read_a_range_over_multiple_scaled_values()
     {
@@ -190,7 +189,47 @@ public class TriangularListTests:DbTestBase
         Assert.That(values[0], Is.EqualTo(10.04m));
     }
 
-    
+    [Test, Explicit("Takes around 6 minutes on my laptop.")]
+    public void can_handle_a_large_input_data_set()
+    {
+        ResetDatabase();
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "rangeTest");
+        
+        var subject = TriangularList<DateTime, TestComplexType>
+            .Create.UsingStorage(storage)
+            .KeyOn(DateFromTestComplexType)
+            .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Rank(1, "PerMinute", DateTimeMinutes)
+            .Rank(2, "PerHour",   DateTimeHours)
+            .Rank(3, "PerDay",    DateTimeDays)
+            .Rank(4, "PerWeek",   DateTimeWeeks)
+            .Build();
+        
+        var hr = 60.0;
+        var day = 1440.0;
+        var opCount = 0;
+        var baseDate = new DateTime(2020,5,5, 0,0,0, DateTimeKind.Utc);
+
+        for (int i = 0; i < 10_000; i++) // 10_000 -> 30 years of data
+        {
+            opCount += subject.WriteItem(new TestComplexType(baseDate, i*hr + i,           1.01m, 2.50m));
+            opCount += subject.WriteItem(new TestComplexType(baseDate, i*day + i*hr + i,   2.01m, 4.50m));
+        }
+        
+        Console.WriteLine($"Total operations: {opCount}"); // This really only get optimal as data size grows significantly
+        //     571'028 operations in triangular data (about 700x faster than naive)
+        // 400'000'000 operations with naive re-calculation (20'000 recalculations, each with 2*n data-points -- assumes very efficient recalculation)
+        
+        //Console.WriteLine(subject.DumpTables());
+
+        // One year of data by week. Should be 52 items.
+        var values = subject.ReadAggregateRange<decimal>("Spent", "PerWeek", new DateTime(2023,1,1,  0,0,0), new DateTime(2024,1,1, 0,0,0)).ToList();
+        
+        Console.WriteLine(string.Join(", ", values));
+        Assert.That(values.Count, Is.EqualTo(53));
+    }
+
     // --- Rank Classification Functions --- //
     private static long DateTimeMinutes(DateTime item)
     {
