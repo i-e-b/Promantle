@@ -256,6 +256,7 @@ public class TriangularList<TK, TV>
         var key = _keyFunction(item);
         var zeroRankIndex = _nextZero++;
         
+        // TODO: do each aggregation across a single rank loop.
         // for each aggregation, go through the ranks and re-sum data
         foreach (var kvp in _aggregateByName)
         {

@@ -2,6 +2,8 @@
 using NUnit.Framework;
 using Promantle;
 using PromantleTests.Helpers;
+// ReSharper disable AssignNullToNotNullAttribute
+// ReSharper disable RedundantTypeArgumentsOfMethod
 #pragma warning disable CS8602
 
 namespace PromantleTests;
@@ -263,14 +265,14 @@ public class TriangularListTests:DbTestBase
         var baseDate = new DateTime(2020,5,5, 0,0,0, DateTimeKind.Utc);
 
         sw.Restart();
-        for (int i = 0; i < 10_000; i++) // 10_000 -> 30 years of data
+        for (int i = 0; i < 10_000; i++) // 10_000 entries covering 30 years of data
         {
             opCount += subject.WriteItem(new TestComplexType(baseDate, i*hr + i,           1.01m, 2.50m));
             opCount += subject.WriteItem(new TestComplexType(baseDate, i*day + i*hr + i,   2.01m, 4.50m));
         }
         sw.Stop();
         
-        var rate = 10_000.0 / sw.Elapsed.TotalSeconds;
+        var rate = 20_000.0 / sw.Elapsed.TotalSeconds;
         Console.WriteLine($"Writing data took {sw.Elapsed}; Total operations: {opCount}; {rate:0.0} op/second"); // This really only get efficient as data size grows significantly
         //     571'028 operations in triangular data (about 700x faster than naive)
         // 400'000'000 operations with naive re-calculation (20'000 recalculations, each with 2*n data-points -- assumes very efficient recalculation)
@@ -290,6 +292,60 @@ public class TriangularListTests:DbTestBase
         Console.WriteLine("Values: "+string.Join(", ", values));
         Console.WriteLine("Data points:\r\n    "+string.Join("\r\n    ", data));
         Assert.That(values.Count, Is.EqualTo(53));
+    }
+
+    [Test]
+    public void can_aggregate_the_same_data_multiple_different_ways()
+    {
+        ResetDatabase();
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "rangeTest");
+        
+        var subject = TriangularList<DateTime, TestComplexType>
+            .Create.UsingStorage(storage)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
+            .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("MaxTransaction", MaxFromTestComplexType, DecimalMaxAggregate, "DECIMAL") // complex aggregate: both source data are combined
+            .Rank(1, "PerHour",   DateTimeHours)
+            .Rank(2, "PerDay",    DateTimeDays)
+            .Build();
+        
+        var baseDate = new DateTime(2020,5,5, 0,0,0, DateTimeKind.Utc);
+
+        int dataPointCount = 48;
+        var expected = 0.0m;
+        var totalSpends = 0.0m;
+        var totalEarns = 0.0m;
+        for (int i = 0; i < dataPointCount; i++) // one day in 30 min increments
+        {
+            var spend = 1.01m + ((i % 5 * (i % 24)) * 1.0m);
+            var earn = 80.0m - spend;
+            
+            totalSpends += spend;
+            totalEarns += earn;
+            
+            expected = Math.Max(expected, spend);
+            expected = Math.Max(expected, earn);
+            
+            subject.WriteItem(new TestComplexType(baseDate, i*30, spend, earn));
+        }
+        
+        // Now pick out the maximum individual value across multiple properties and data-points
+        var maximumIndividualValue = subject.ReadDataAtPoint<decimal>("MaxTransaction", "PerDay", new DateTime(2020,5,5,  5,0,0));
+        var spent = subject.ReadDataAtPoint<decimal>("Spent", "PerDay", new DateTime(2020,5,5,  5,0,0));
+        var earned = subject.ReadDataAtPoint<decimal>("Earned", "PerDay", new DateTime(2020,5,5,  5,0,0));
+        
+        Console.WriteLine("Max value:  "+(maximumIndividualValue?.ToString() ?? "<null>"));
+        Console.WriteLine("Avg spend:  "+(spent.Value / spent.Count));
+        Console.WriteLine("Avg earned: "+(earned.Value / earned.Count));
+        
+        Assert.That(maximumIndividualValue, Is.Not.Null);
+        Assert.That(maximumIndividualValue.Value, Is.EqualTo(expected));
+        Assert.That(spent.Value / spent.Count, Is.EqualTo(totalSpends/dataPointCount).Within(0.0001));
+        Assert.That(earned.Value / earned.Count, Is.EqualTo(totalEarns/dataPointCount).Within(0.0001));
+        Assert.That(maximumIndividualValue.Count, Is.EqualTo(dataPointCount));
+        Assert.That(maximumIndividualValue.LowerBound.ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 00:00"));
+        Assert.That(maximumIndividualValue.UpperBound.ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 23:30"));
     }
 
     // --- Rank Classification Functions --- //
@@ -325,6 +381,9 @@ public class TriangularListTests:DbTestBase
     // --- Aggregate Data Functions --- //
     private static decimal SpentFromTestComplexType(TestComplexType item) => item.SpentAmount;
     private static decimal EarnedFromTestComplexType(TestComplexType item) => item.EarnedAmount;
+    private static decimal MaxFromTestComplexType(TestComplexType item) => Math.Max(item.EarnedAmount, item.SpentAmount);
+
+    private static decimal DecimalMaxAggregate(decimal a, decimal b) => Math.Max(a,b);
     private static decimal DecimalSumAggregate(decimal a, decimal b) => a+b;
 }
 

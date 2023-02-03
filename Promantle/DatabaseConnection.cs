@@ -20,7 +20,7 @@ public class DatabaseConnection : ITableAdaptor
     {
         ConnectionString = $"Server=127.0.0.1;Port={port};Database=defaultdb;User Id=unit;Password=test;Include Error Detail=true;CommandTimeout=10;SSL Mode=Require;Trust Server Certificate=true;";
         BaseTableName = tableName;
-        Console.WriteLine($"Connection: table={BaseTableName}; str='{ConnectionString}'");
+        //Console.WriteLine($"Connection: table={BaseTableName}; str='{ConnectionString}'");
     }
 
     #region PoorMansDapper
@@ -242,8 +242,8 @@ SELECT EXISTS (
         sb.Append(");"); // close definition
         
         var query = sb.ToString();
-        Console.WriteLine(query);
-        SimpleSelect(query, null);
+        //Console.WriteLine(query);
+        SimpleExecute(query, null);
         return true;
     }
 
