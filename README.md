@@ -5,6 +5,9 @@ Experimental ways of storing data for high speed queries
 * [ ] Custom range triangular data
 * [ ] Multi-page data with baked-in sorting
 
+## Requirements
+
+Uses Cockroach DB: https://www.cockroachlabs.com/docs/releases/index.html
 
 ## Triangular data
 

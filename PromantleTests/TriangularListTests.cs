@@ -238,6 +238,8 @@ public class TriangularListTests:DbTestBase
     }
 
     [Test, Explicit("Takes around 6 minutes on my laptop.")]
+    // For some reason, it takes *hours* on my Linux machine.
+    // Need to figure out what is causing it. Might be a crdb issue, or some other issue?
     public void can_handle_a_large_input_data_set()
     {
         ResetDatabase();
@@ -267,6 +269,7 @@ public class TriangularListTests:DbTestBase
         sw.Restart();
         for (int i = 0; i < 10_000; i++) // 10_000 entries covering 30 years of data
         {
+            Console.Write(".");
             opCount += subject.WriteItem(new TestComplexType(baseDate, i*hr + i,           1.01m, 2.50m));
             opCount += subject.WriteItem(new TestComplexType(baseDate, i*day + i*hr + i,   2.01m, 4.50m));
         }

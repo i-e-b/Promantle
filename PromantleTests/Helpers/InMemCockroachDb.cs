@@ -19,7 +19,7 @@ public class InMemCockroachDb: PersistentProcessBase, IDisposable
         
     private readonly Dictionary<string,PlatformSetting> _possiblePaths = new()
     {
-        {"/usr/local/bin/cockroach", new PlatformSetting{Timeout = 500, TempFile = "/home/gitlab-runner/crdb_temp"}},
+        {"/usr/local/bin/cockroach", new PlatformSetting{Timeout = 500, TempFile = "/tmp/crdb_temp"}},
         {@"C:\cockroach-windows\cockroach.exe", new PlatformSetting{Timeout=25, TempFile = GetRandomPath()}}
     };
 
