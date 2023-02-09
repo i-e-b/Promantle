@@ -1,3 +1,5 @@
+#define UseCockroach
+
 using NUnit.Framework;
 
 namespace PromantleTests.Helpers;
@@ -5,15 +7,22 @@ namespace PromantleTests.Helpers;
 [SingleThreaded]
 public class DbTestBase
 {
+#if UseCockroach
     private InMemCockroachDb? _cockroachInstance;
+#else
     private InMemPostgresDb? _postgresInstance;
+#endif
 
     protected void ResetDatabase()
     {
+#if UseCockroach
         _cockroachInstance?.ResetDatabase();
+#else
         _postgresInstance?.ResetDatabase();
+#endif
     }
 
+#if UseCockroach
     private void StartCockroach()
     {
         _cockroachInstance ??= new InMemCockroachDb();
@@ -25,6 +34,7 @@ public class DbTestBase
         _cockroachInstance = null;
     }
     
+#else
     
     private void StartPostgres()
     {
@@ -36,18 +46,25 @@ public class DbTestBase
         _postgresInstance?.Dispose();
         _postgresInstance = null;
     }
+#endif
 
     [OneTimeSetUp]
     public void Setup()
     {
-        StartPostgres();
+#if UseCockroach
         StartCockroach();
+#else
+        StartPostgres();
+#endif
     }
 
     [OneTimeTearDown]
     public void OneTimeTearDown()
     {
+#if UseCockroach
         StopCockroach();
+#else
         StopPostgres();
+#endif
     }
 }

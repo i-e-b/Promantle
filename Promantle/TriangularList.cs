@@ -317,6 +317,19 @@ public class TriangularList<TK, TV>
 
     private TX? NullCast<TX>(object? v)
     {
+        if (typeof(TX).IsEnum && v is not null)
+        {
+            // Do enum fiddling
+            try
+            {
+                return (TX)Enum.ToObject(typeof(TX), v);
+            }
+            catch
+            {
+                // ignore
+            }
+        }
+
         return v switch
         {
             null => default!,
@@ -375,9 +388,7 @@ public class TriangularList<TK, TV>
         if (value is null) return default;
 
         // Sanity check types
-        if (value.Value is not TA final) throw new Exception($"Expected value type '{typeof(TA).Name}', but aggregate '{aggregation}' at rank '{rank}' has type '{value.Value?.GetType().Name ?? "<null>"}'");
-        if (value.UpperBound is not null && value.UpperBound is not TK) throw new Exception($"Expected key type '{typeof(TK).Name}', but key at rank '{rank}' has type '{value.UpperBound?.GetType().Name ?? "<null>"}'");
-        if (value.LowerBound is not null && value.LowerBound is not TK) throw new Exception($"Expected key type '{typeof(TK).Name}', but key at rank '{rank}' has type '{value.LowerBound?.GetType().Name ?? "<null>"}'");
+        if (value.Value is not TA) throw new Exception($"Expected value type '{typeof(TA).Name}', but aggregate '{aggregation}' at rank '{rank}' has type '{value.Value?.GetType().Name ?? "<null>"}'");
         
         // Build return structure
         return TypedAggregateValue<TA>(value);

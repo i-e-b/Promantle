@@ -233,13 +233,14 @@ public class TriangularListTests:DbTestBase
         Assert.That(value, Is.Not.Null);
         Assert.That(value.Value, Is.EqualTo(2.02));
         Assert.That(value.Count, Is.EqualTo(2));
-        Assert.That(value.LowerBound.ToUniversalTime().ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 05:00")); // Bad when using Postgres?
-        Assert.That(value.UpperBound.ToUniversalTime().ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 05:30"));
+        Assert.That(value.LowerBound./*ToUniversalTime().*/ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 05:00")); // Bad when using Postgres?
+        Assert.That(value.UpperBound./*ToUniversalTime().*/ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 05:30"));
     }
 
-    [Test, Explicit("Takes around 6 minutes on my laptop.")]
-    // For some reason, it takes *hours* on my Linux machine.
-    // Need to figure out what is causing it. Might be a crdb issue, or some other issue?
+    [Test, Explicit("Large data set. Takes a while on Postgres, and ages in CRDB")]
+    // Using Cockroach, this takes about 6 minutes on Window. For some reason, it takes *hours* on my Linux machine.
+    // On Windows, Postgres is about 7x faster than Crdb
+    // TODO: measure Postgres on Linux
     public void can_handle_a_large_input_data_set()
     {
         ResetDatabase();
@@ -333,9 +334,9 @@ public class TriangularListTests:DbTestBase
         }
         
         // Now pick out the maximum individual value across multiple properties and data-points
-        var maximumIndividualValue = subject.ReadDataAtPoint<decimal>("MaxTransaction", "PerDay", new DateTime(2020,5,5,  5,0,0));
-        var spent = subject.ReadDataAtPoint<decimal>("Spent", "PerDay", new DateTime(2020,5,5,  5,0,0));
-        var earned = subject.ReadDataAtPoint<decimal>("Earned", "PerDay", new DateTime(2020,5,5,  5,0,0));
+        var maximumIndividualValue = subject.ReadDataAtPoint<decimal>("MaxTransaction", "PerDay", new DateTime(2020,5,5,  5,0,0, DateTimeKind.Utc));
+        var spent = subject.ReadDataAtPoint<decimal>("Spent", "PerDay", new DateTime(2020,5,5,  5,0,0, DateTimeKind.Utc));
+        var earned = subject.ReadDataAtPoint<decimal>("Earned", "PerDay", new DateTime(2020,5,5,  5,0,0, DateTimeKind.Utc));
         
         Console.WriteLine("Max value:  "+(maximumIndividualValue?.ToString() ?? "<null>"));
         Console.WriteLine("Avg spend:  "+(spent.Value / spent.Count));
@@ -346,32 +347,58 @@ public class TriangularListTests:DbTestBase
         Assert.That(spent.Value / spent.Count, Is.EqualTo(totalSpends/dataPointCount).Within(0.0001));
         Assert.That(earned.Value / earned.Count, Is.EqualTo(totalEarns/dataPointCount).Within(0.0001));
         Assert.That(maximumIndividualValue.Count, Is.EqualTo(dataPointCount));
-        Assert.That(maximumIndividualValue.LowerBound.ToUniversalTime().ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 00:00"));
-        Assert.That(maximumIndividualValue.UpperBound.ToUniversalTime().ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 23:30"));
+        Assert.That(maximumIndividualValue.LowerBound/*.ToUniversalTime()*/.ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 00:00"));
+        Assert.That(maximumIndividualValue.UpperBound/*.ToUniversalTime()*/.ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 23:30"));
     }
 
+    [Test]
+    public void can_use_arbitrary_values_for_keys_and_ranks()
+    {
+        ResetDatabase();
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "GeoLocalRanks");
+        
+        var subject = TriangularList<Geolocation, SaleWithLocation>
+            .Create.UsingStorage(storage)
+            .KeyOn("INT", s=>s.SalesLocation, Regions.MinMax)
+            .Aggregate<decimal>("Cost", s=>s.Cost, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("Price", s=>s.SoldPrice, DecimalSumAggregate, "DECIMAL")
+            .Rank(1, "Country",   r=>(long)r)
+            .Rank(2, "Landmass",   r=>(long)Regions.LocationToLandmass(r))
+            .Rank(3, "Zone",    r=>(long)Regions.LocationToGeoZone(r))
+            .Rank(4, "Worldwide",    Regions.LocationToWorldwide)
+            .Build();
+        
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 10.00m, 35.00m, Geolocation.Angola));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 11.00m, 34.00m, Geolocation.Spain));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 12.00m, 33.00m, Geolocation.UK));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 13.00m, 32.00m, Geolocation.Taiwan));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 14.00m, 31.00m, Geolocation.USA));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 15.00m, 30.00m, Geolocation.Mexico));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 16.00m, 29.00m, Geolocation.Ghana));
+        // and so on...
+        
+        // Get sales across Europe (that is, all in same 'Landmass' as Germany
+        var sales = subject.ReadDataAtPoint<decimal>("Price", "Landmass", Geolocation.Germany);
+        var costs = subject.ReadDataAtPoint<decimal>("Cost", "Landmass", Geolocation.Germany);
+        var profit = sales.Value - costs.Value;
+        //if (profit < 0) RunNewAdCampaign();
+        
+        Assert.That(costs.Value, Is.EqualTo(23.0m));
+        Assert.That(costs.Count, Is.EqualTo(2));
+        Assert.That(sales.Value, Is.EqualTo(67.0m));
+        Assert.That(sales.Count, Is.EqualTo(2));
+        Assert.That(profit, Is.EqualTo(44.0m));
+    }
+
+
+
     // --- Rank Classification Functions --- //
-    private static long DateTimeMinutes(DateTime item)
-    {
-        var baseDate = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        return (long)Math.Floor((item - baseDate).TotalMinutes);
-    }
-    private static long DateTimeHours(DateTime item)
-    {
-        var baseDate = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        return (long)Math.Floor((item - baseDate).TotalHours);
-    }
-    private static long DateTimeDays(DateTime item)
-    {
-        var baseDate = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        return (long)Math.Floor((item - baseDate).TotalDays);
-    }
-    private static long DateTimeWeeks(DateTime item)
-    {
-        var baseDate = new DateTime(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
-        return (long)Math.Floor((item - baseDate).TotalDays / 7.0);
-    }
-    
+    private static readonly DateTime _baseDate = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    private static long DateTimeMinutes(DateTime item) => (long)Math.Floor((item - _baseDate).TotalMinutes);
+    private static long DateTimeHours(DateTime item) => (long)Math.Floor((item - _baseDate).TotalHours);
+    private static long DateTimeDays(DateTime item) => (long)Math.Floor((item - _baseDate).TotalDays);
+    private static long DateTimeWeeks(DateTime item) => (long)Math.Floor((item - _baseDate).TotalDays / 7.0);
+
     // --- Aggregate Classification Functions --- //
     private static DateTime DateFromTestComplexType(TestComplexType item) => item.RecordedDate;
     private static void DateMinMax(DateTime a, DateTime b, out DateTime min, out DateTime max)
@@ -389,6 +416,7 @@ public class TriangularListTests:DbTestBase
     private static decimal DecimalSumAggregate(decimal a, decimal b) => a+b;
 }
 
+
 public class TestComplexType
 {
     public DateTime RecordedDate { get; init; }
@@ -403,4 +431,172 @@ public class TestComplexType
         SpentAmount=spend;
         EarnedAmount=earned;
     }
+}
+
+public static class Regions
+{
+    public static GeoLandmass LocationToLandmass(Geolocation location)
+    {
+        return location switch
+        {
+            Geolocation.China => GeoLandmass.EastAsia,
+            Geolocation.India => GeoLandmass.Subcontinent,
+            Geolocation.USA => GeoLandmass.NorthAmerica,
+            Geolocation.Indonesia => GeoLandmass.Oceania,
+            Geolocation.Pakistan => GeoLandmass.Subcontinent,
+            Geolocation.Nigeria => GeoLandmass.SubSahara,
+            Geolocation.Brazil => GeoLandmass.SouthAmerica,
+            Geolocation.Bangladesh => GeoLandmass.Subcontinent,
+            Geolocation.Russia => GeoLandmass.WestAsia,
+            Geolocation.Mexico => GeoLandmass.NorthAmerica,
+            Geolocation.Japan => GeoLandmass.EastAsia,
+            Geolocation.Philippines => GeoLandmass.Oceania,
+            Geolocation.Ethiopia => GeoLandmass.NorthAfrica,
+            Geolocation.Egypt => GeoLandmass.NorthAfrica,
+            Geolocation.Vietnam => GeoLandmass.EastAsia,
+            Geolocation.DrCongo => GeoLandmass.SubSahara,
+            Geolocation.Iran => GeoLandmass.WestAsia,
+            Geolocation.Turkey => GeoLandmass.WestAsia,
+            Geolocation.Germany => GeoLandmass.Europe,
+            Geolocation.France => GeoLandmass.Europe,
+            Geolocation.UK => GeoLandmass.Europe,
+            Geolocation.Thailand => GeoLandmass.Oceania,
+            Geolocation.Tanzania => GeoLandmass.SubSahara,
+            Geolocation.SouthAfrica => GeoLandmass.SubSahara,
+            Geolocation.Italy => GeoLandmass.Europe,
+            Geolocation.Myanmar => GeoLandmass.EastAsia,
+            Geolocation.SouthKorea => GeoLandmass.EastAsia,
+            Geolocation.Colombia => GeoLandmass.CentralAmerica,
+            Geolocation.Spain => GeoLandmass.Europe,
+            Geolocation.Kenya => GeoLandmass.SubSahara,
+            Geolocation.Argentina => GeoLandmass.SouthAmerica,
+            Geolocation.Algeria => GeoLandmass.NorthAfrica,
+            Geolocation.Sudan => GeoLandmass.NorthAfrica,
+            Geolocation.Uganda => GeoLandmass.SubSahara,
+            Geolocation.Iraq => GeoLandmass.WestAsia,
+            Geolocation.Ukraine => GeoLandmass.Europe,
+            Geolocation.Canada => GeoLandmass.NorthAfrica,
+            Geolocation.Poland => GeoLandmass.Europe,
+            Geolocation.Morocco => GeoLandmass.NorthAfrica,
+            Geolocation.Uzbekistan => GeoLandmass.WestAsia,
+            Geolocation.SaudiArabia => GeoLandmass.WestAsia,
+            Geolocation.Yemen => GeoLandmass.WestAsia,
+            Geolocation.Peru => GeoLandmass.SouthAmerica,
+            Geolocation.Angola => GeoLandmass.SubSahara,
+            Geolocation.Afghanistan => GeoLandmass.WestAsia,
+            Geolocation.Malaysia => GeoLandmass.EastAsia,
+            Geolocation.Mozambique => GeoLandmass.SubSahara,
+            Geolocation.Ghana => GeoLandmass.SubSahara,
+            Geolocation.IvoryCoast => GeoLandmass.SubSahara,
+            Geolocation.Nepal => GeoLandmass.Subcontinent,
+            Geolocation.Venezuela => GeoLandmass.SouthAmerica,
+            Geolocation.Madagascar => GeoLandmass.SubSahara,
+            Geolocation.Australia => GeoLandmass.Oceania,
+            Geolocation.NorthKorea => GeoLandmass.EastAsia,
+            Geolocation.Cameroon => GeoLandmass.SubSahara,
+            Geolocation.Niger => GeoLandmass.SubSahara,
+            Geolocation.Taiwan => GeoLandmass.EastAsia,
+            Geolocation.Mali => GeoLandmass.SubSahara,
+            Geolocation.SriLanka => GeoLandmass.Subcontinent,
+            Geolocation.Syria => GeoLandmass.WestAsia,
+            Geolocation.BurkinaFaso => GeoLandmass.SubSahara,
+            Geolocation.Malawi => GeoLandmass.SubSahara,
+            Geolocation.Chile => GeoLandmass.SouthAmerica,
+            Geolocation.Kazakhstan => GeoLandmass.WestAsia,
+            Geolocation.Zambia => GeoLandmass.SubSahara,
+            Geolocation.Romania => GeoLandmass.Europe,
+            Geolocation.Ecuador => GeoLandmass.SouthAmerica,
+            Geolocation.Netherlands => GeoLandmass.Europe,
+            Geolocation.Somalia => GeoLandmass.NorthAfrica,
+            Geolocation.Senegal => GeoLandmass.SubSahara,
+            Geolocation.Guatemala => GeoLandmass.CentralAmerica,
+            Geolocation.Chad => GeoLandmass.NorthAfrica,
+            _ => GeoLandmass.Other
+        };
+    }
+
+    public static GeoZone LocationToGeoZone(Geolocation location)
+    {
+        var landmass = LocationToLandmass(location);
+        return landmass switch
+        {
+            GeoLandmass.Europe => GeoZone.EMEA,
+            GeoLandmass.WestAsia => GeoZone.EMEA,
+            GeoLandmass.EastAsia => GeoZone.APAC,
+            GeoLandmass.Subcontinent => GeoZone.APAC,
+            GeoLandmass.NorthAfrica => GeoZone.EMEA,
+            GeoLandmass.SubSahara => GeoZone.EMEA,
+            GeoLandmass.Oceania => GeoZone.APAC,
+            GeoLandmass.NorthAmerica => GeoZone.AMER,
+            GeoLandmass.CentralAmerica => GeoZone.AMER,
+            GeoLandmass.SouthAmerica => GeoZone.AMER,
+            GeoLandmass.Other => GeoZone.APAC,
+            _ => GeoZone.APAC
+        };
+    }
+
+    public static long LocationToWorldwide(Geolocation location)
+    {
+        return 1; // only one world, so far.
+    }
+
+    /// <summary>
+    /// Min/max doesn't mean much with this, so we give arbitrary values.
+    /// We could order the countries by GDP or population to give a range of values that way.
+    /// </summary>
+    public static void MinMax(Geolocation a, Geolocation b, out Geolocation min, out Geolocation max)
+    {
+        min = (Geolocation)Math.Min((long)a,(long)b);
+        max = (Geolocation)Math.Max((long)a,(long)b);
+    }
+}
+
+
+public class SaleWithLocation
+{
+    public DateTime RecordedDate { get; init; }
+    public decimal Cost { get; init; }
+    public decimal SoldPrice { get; init; }
+    public Geolocation SalesLocation { get; init; }
+
+    public SaleWithLocation() { }
+
+    public SaleWithLocation(DateTime date, decimal cost, decimal soldFor, Geolocation location)
+    {
+        RecordedDate = date;
+        Cost = cost;
+        SoldPrice = soldFor;
+        SalesLocation = location;
+    }
+}
+
+public enum GeoZone : long
+{
+    // ReSharper disable InconsistentNaming
+    APAC, EMEA, AMER
+    // ReSharper restore InconsistentNaming
+}
+
+public enum GeoLandmass: long
+{
+    Europe, WestAsia, EastAsia, Subcontinent, NorthAfrica, SubSahara,
+    Oceania, NorthAmerica, CentralAmerica, SouthAmerica, Other
+}
+
+public enum Geolocation: long
+{
+    China, India, USA, Indonesia, Pakistan, Nigeria,
+    Brazil, Bangladesh, Russia, Mexico, Japan,
+    Philippines, Ethiopia, Egypt, Vietnam, DrCongo,
+    Iran, Turkey, Germany, France, UK, Thailand,
+    Tanzania, SouthAfrica, Italy, Myanmar, SouthKorea,
+    Colombia, Spain, Kenya, Argentina, Algeria,
+    Sudan, Uganda, Iraq, Ukraine, Canada, Poland,
+    Morocco, Uzbekistan, SaudiArabia, Yemen, Peru,
+    Angola, Afghanistan, Malaysia, Mozambique, Ghana,
+    IvoryCoast, Nepal, Venezuela, Madagascar,
+    Australia, NorthKorea, Cameroon, Niger, Taiwan,
+    Mali, SriLanka, Syria, BurkinaFaso, Malawi,
+    Chile, Kazakhstan, Zambia, Romania, Ecuador,
+    Netherlands, Somalia, Senegal, Guatemala, Chad
 }

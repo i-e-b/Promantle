@@ -1,4 +1,6 @@
-﻿using System.ComponentModel;
+﻿#define UseCockroach
+
+using System.ComponentModel;
 using System.Data;
 using System.Text;
 using Npgsql;
@@ -10,8 +12,11 @@ namespace Promantle;
 /// </summary>
 public class DatabaseConnection : ITableAdaptor
 {
-    //public const string SchemaName = "triangles"; // separate schema for triangular data
-    public const string SchemaName = "public"; // separate schema for triangular data
+#if UseCockroach
+    public const string SchemaName = "triangles"; // separate schema for triangular data
+#else
+    public const string SchemaName = "public"; // postgres schemas tricky with test setup
+#endif
     public const string CountPostfix = "_count";
     public const string ValuePostfix = "_value";
     public string ConnectionString { get; set; }
@@ -19,11 +24,13 @@ public class DatabaseConnection : ITableAdaptor
 
     public DatabaseConnection(int port, string tableName)
     {
+#if UseCockroach
         // CRDB:
-        //ConnectionString = $"Server=127.0.0.1;Port={port};Database=defaultdb;User Id=unit;Password=test;Include Error Detail=true;CommandTimeout=10;SSL Mode=Require;Trust Server Certificate=true;";
-        
+        ConnectionString = $"Server=127.0.0.1;Port={port};Database=defaultdb;User Id=unit;Password=test;Include Error Detail=true;CommandTimeout=10;SSL Mode=Require;Trust Server Certificate=true;";
+#else
         // Postgres:
         ConnectionString = "Server=127.0.0.1;Port=54448;Database=testdb;User Id=postgres;Password=password;Include Error Detail=true;CommandTimeout=360;Enlist=false;No Reset On Close=true;";
+#endif
         
         BaseTableName = tableName;
         Console.WriteLine($"Connection: table={BaseTableName}; str='{ConnectionString}'");
@@ -104,7 +111,17 @@ SELECT EXISTS (
         {
             var val = prop.GetValue(parameters);
             if (val is null) continue;
-            cmd.Parameters.AddWithValue(prop.Name, val);
+
+            if (val.GetType().IsEnum) // cast enums to base type
+            {
+                var type = Enum.GetUnderlyingType(val.GetType());
+                var underVal = Convert.ChangeType(val, type);
+                cmd.Parameters.AddWithValue(prop.Name, underVal);
+            }
+            else // pass normal types directly
+            {
+                cmd.Parameters.AddWithValue(prop.Name, val);
+            }
         }
 
         return cmd;
@@ -146,12 +163,12 @@ SELECT EXISTS (
         // TODO: protect aggregateName from injection
         var synthName = SynthName(rank, rankCount);
         return SimpleSelectMany<AggregateValue>(
-            $"SELECT position, parentPosition, {aggregateName}{CountPostfix}, {aggregateName}{ValuePostfix}, lowerBound,  upperBound" +
-            $" FROM {SchemaName}.{synthName}" +
-            "  WHERE position = :position" +
-            "  LIMIT 1;",
-            new {position}, 
-            ReadAggregateValue)
+                $"SELECT position, parentPosition, {aggregateName}{CountPostfix}, {aggregateName}{ValuePostfix}, lowerBound,  upperBound" +
+                $" FROM {SchemaName}.{synthName}" +
+                "  WHERE position = :position" +
+                "  LIMIT 1;",
+                new {position}, 
+                ReadAggregateValue)
             .FirstOrDefault();
     }
 
@@ -246,14 +263,18 @@ SELECT EXISTS (
             sb.AppendLine($",   {agg.Name}{ValuePostfix} {agg.Type}"); // the summed value
         }
         
+#if UseCockroach
         // CRDB only:
-        //sb.AppendLine($",   INDEX index_my_pos_{synthName} (position)");
-        //sb.AppendLine($",   INDEX index_parent_{synthName} (parentPosition)");
+        sb.AppendLine($",   INDEX index_my_pos_{synthName} (position)");
+        sb.AppendLine($",   INDEX index_parent_{synthName} (parentPosition)");
+#endif
         sb.Append(");"); // close definition
         
+#if !UseCockroach
         // Postgres syntax:
         sb.AppendLine($"CREATE INDEX index_my_pos_{synthName} ON  {SchemaName}.{synthName} (position);");
         sb.AppendLine($"CREATE INDEX index_parent_{synthName} ON  {SchemaName}.{synthName} (parentPosition);");
+#endif
         
         var query = sb.ToString();
         //Console.WriteLine(query);
