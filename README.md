@@ -125,8 +125,8 @@ if (profit < 0) RunNewAdCampaign();
 * [x] Query points and ranges
 * [x] Get the upper/lower range of a single data point
 * [x] Demonstrate averages
-* [ ] Demonstrate different data and key types
-* [ ] Demonstrate data persistence
+* [x] Demonstrate different data and key types
+* [x] Demonstrate data persistence
 * [x] Demonstrate different aggregates (max/min/..?)
 * [ ] Tests around very sparse data
 * [ ] Query for source data items under a given rank-1 value.

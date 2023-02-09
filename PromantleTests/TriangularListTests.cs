@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using Npgsql;
 using NUnit.Framework;
 using Promantle;
 using PromantleTests.Helpers;
@@ -390,6 +391,69 @@ public class TriangularListTests:DbTestBase
         Assert.That(profit, Is.EqualTo(44.0m));
     }
 
+    [Test]
+    public void data_is_persistent()
+    {
+        var baseDate = new DateTime(2020, 5, 5, 0, 0, 0, DateTimeKind.Utc);
+        var hr = 60.0;
+        
+        // Connection 1
+        {
+            ResetDatabase();
+            var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "persistentTest");
+
+            var subject = TriangularList<DateTime, TestComplexType>
+                .Create.UsingStorage(storage)
+                .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
+                .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+                .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+                .Rank(1, "PerMinute", DateTimeMinutes)
+                .Rank(2, "PerHour", DateTimeHours)
+                .Rank(3, "PerDay", DateTimeDays)
+                .Rank(4, "PerWeek", DateTimeWeeks)
+                .Build();
+
+            subject.WriteItem(new TestComplexType(baseDate, .5, 1.01m, 2.50m));
+            subject.WriteItem(new TestComplexType(baseDate, 10, 2.01m, 4.50m));
+            subject.WriteItem(new TestComplexType(baseDate, 20.5, 3.01m, 6.50m));
+            subject.WriteItem(new TestComplexType(baseDate, 40, 4.01m, 4.50m));
+            subject.WriteItem(new TestComplexType(baseDate, hr, 5.01m, 2.50m));
+            subject.WriteItem(new TestComplexType(baseDate, 1 * hr + 30, 4.01m, 4.50m));
+            subject.WriteItem(new TestComplexType(baseDate, 2 * hr + 15, 3.01m, 6.50m));
+            subject.WriteItem(new TestComplexType(baseDate, 3 * hr + 30, 2.01m, 4.50m));
+            subject.WriteItem(new TestComplexType(baseDate, 4 * hr + 45, 1.01m, 2.50m));
+            subject.WriteItem(new TestComplexType(baseDate, 5 * hr + .05, 2.01m, 4.50m));
+        }
+        
+        NpgsqlConnection.ClearAllPools(); // Fully disconnect from DB
+        
+        // Connection 2
+        {
+            var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "persistentTest");
+
+            // create a new list with same parameters as original
+            var subject2 = TriangularList<DateTime, TestComplexType>
+                .Create.UsingStorage(storage)
+                .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
+                .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+                .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+                .Rank(1, "PerMinute", DateTimeMinutes)
+                .Rank(2, "PerHour", DateTimeHours)
+                .Rank(3, "PerDay", DateTimeDays)
+                .Rank(4, "PerWeek", DateTimeWeeks)
+                .Build();
+            
+            // write more data
+            subject2.WriteItem(new TestComplexType(baseDate, 5 * hr + .10, 2.01m, 4.50m));
+            subject2.WriteItem(new TestComplexType(baseDate, 5 * hr + .15, 2.01m, 4.50m));
+
+            // Query from both sets of data
+            var values = subject2.ReadAggregateDataOverRange<decimal>("Spent", "PerHour", new DateTime(2020, 1, 1, 0, 0, 0), new DateTime(2021, 1, 1, 0, 0, 0)).ToList();
+
+            Assert.That(values.Count, Is.EqualTo(6));
+            Assert.That(values[0], Is.EqualTo(10.04m));
+        }
+    }
 
 
     // --- Rank Classification Functions --- //
