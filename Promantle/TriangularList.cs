@@ -395,6 +395,42 @@ public class TriangularList<TK, TV>
     }
 
     /// <summary>
+    /// Read all child items that are aggregated by the given rank and target point.
+    /// If the given rank is the lowest, the stored original data-points will be read.
+    /// </summary>
+    /// <param name="rank">Name of the rank/range the aggregate value should come from</param>
+    /// <param name="aggregation">Name of the aggregation to read</param>
+    /// <param name="target">The key for the point or range to read</param>
+    /// <typeparam name="TA">Type of the data to be returned</typeparam>
+    /// <returns>Multiple aggregate values that include the source value range and count at each point</returns>
+    public IEnumerable<AggregateValue<TA, TK>> ReadDataUnderPoint<TA>(string aggregation, string rank, TK target)
+    {
+        if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
+        if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
+
+        if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
+        if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
+
+        // Determine search values
+        var rankInfo = _ranksByName[rank];
+        var position = rankInfo.RankFunction(target);
+        
+        // Read the value
+        var value = _storage.ReadWithParentRank(rankInfo.RankNumber - 1, _rankCount, aggregation, position).ToList();
+        
+        if (value.Count < 1) return Array.Empty<AggregateValue<TA, TK>>();
+        
+        // Check types are as expected
+        if (value[0].Value is not TA)
+        {
+            throw new Exception($"Expected type '{typeof(TA).Name}', but aggregate '{aggregation}' at rank '{rank}' has type '{value[0].Value?.GetType().Name ?? "<null>"}'");
+        }
+        
+        // Convert to the correct type
+        return value.Where(av => av.Value is not null).Select(TypedAggregateValue<TA>);
+    }
+    
+    /// <summary>
     /// Read a range of aggregate values over a range of key values.
     /// For full datapoint details, see <see cref="ReadDataOverRange{TA}"/>
     /// </summary>

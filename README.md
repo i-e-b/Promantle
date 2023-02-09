@@ -129,7 +129,7 @@ if (profit < 0) RunNewAdCampaign();
 * [x] Demonstrate data persistence
 * [x] Demonstrate different aggregates (max/min/..?)
 * [ ] Tests around very sparse data
-* [ ] Query for source data items under a given rank-1 value.
+* [x] Query for source data items under a given rank-1 value.
 
 ```
 

@@ -7,7 +7,6 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_Info", "_Info", "{DFA67A59
 		.gitignore = .gitignore
 		LICENSE = LICENSE
 		README.md = README.md
-		StartPostgres_Win.ps1 = StartPostgres_Win.ps1
 	EndProjectSection
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "PromantleTests", "PromantleTests\PromantleTests.csproj", "{E2CD28AF-8045-4221-B7F6-13A3EE5D2EB1}"

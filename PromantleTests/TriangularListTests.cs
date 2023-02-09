@@ -162,6 +162,39 @@ public class TriangularListTests:DbTestBase
     }
     
     [Test]
+    public void can_read_the_children_of_a_single_scaled_value()
+    {
+        ResetDatabase();
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "test1");
+        
+        var subject = TriangularList<DateTime, TestComplexType>
+            .Create.UsingStorage(storage)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
+            .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Rank(0, "PerHour", DateTimeHours)
+            .Build();
+        
+        subject.WriteItem(new TestComplexType("2020-05-05T09:11:12", 5.0m, 2.5m));
+        subject.WriteItem(new TestComplexType("2020-05-05T10:11:12", 5.1m, 2.5m));
+        subject.WriteItem(new TestComplexType("2020-05-05T10:20:30", 5.2m, 2.5m));
+        subject.WriteItem(new TestComplexType("2020-05-05T10:30:40", 5.3m, 2.5m));
+        subject.WriteItem(new TestComplexType("2020-05-05T11:05:01", 5.4m, 2.5m));
+        subject.WriteItem(new TestComplexType("2020-05-05T12:05:01", 5.5m, 2.5m));
+        
+        // Read all items in the lower rank (in this case, base items)
+        var values = subject.ReadDataUnderPoint<decimal>("Spent", "PerHour", new DateTime(2020,5,5, 10,0,0, DateTimeKind.Utc)).ToList();
+        
+        Assert.That(values.Count, Is.EqualTo(3));
+        Assert.That(values[0].Value, Is.EqualTo(5.1m));
+        Assert.That(values[0].Count, Is.EqualTo(1));
+        Assert.That(values[1].Value, Is.EqualTo(5.2m));
+        Assert.That(values[1].Count, Is.EqualTo(1));
+        Assert.That(values[2].Value, Is.EqualTo(5.3m));
+        Assert.That(values[2].Count, Is.EqualTo(1));
+    }
+
+    [Test]
     public void can_read_a_range_over_multiple_scaled_values()
     {
         ResetDatabase();
@@ -488,6 +521,13 @@ public class TestComplexType
     public decimal EarnedAmount { get; init; }
 
     public TestComplexType() { }
+    
+    public TestComplexType(string dateStr, decimal spend, decimal earned)
+    {
+        RecordedDate = DateTime.ParseExact(dateStr, "yyyy-MM-ddTHH:mm:ss", null);
+        SpentAmount=spend;
+        EarnedAmount=earned;
+    }
 
     public TestComplexType(DateTime baseDate, double minutesAdvance, decimal spend, decimal earned)
     {
