@@ -386,45 +386,6 @@ public class TriangularListTests:DbTestBase
     }
 
     [Test]
-    public void can_use_arbitrary_values_for_keys_and_ranks()
-    {
-        ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "GeoLocalRanks");
-        
-        var subject = TriangularList<Geolocation, SaleWithLocation>
-            .Create.UsingStorage(storage)
-            .KeyOn("INT", s=>s.SalesLocation, Regions.MinMax)
-            .Aggregate<decimal>("Cost", s=>s.Cost, DecimalSumAggregate, "DECIMAL")
-            .Aggregate<decimal>("Price", s=>s.SoldPrice, DecimalSumAggregate, "DECIMAL")
-            .Rank(1, "Country",   r=>(long)r)
-            .Rank(2, "Landmass",   r=>(long)Regions.LocationToLandmass(r))
-            .Rank(3, "Zone",    r=>(long)Regions.LocationToGeoZone(r))
-            .Rank(4, "Worldwide",    Regions.LocationToWorldwide)
-            .Build();
-        
-        subject.WriteItem(new SaleWithLocation(DateTime.Now, 10.00m, 35.00m, Geolocation.Angola));
-        subject.WriteItem(new SaleWithLocation(DateTime.Now, 11.00m, 34.00m, Geolocation.Spain));
-        subject.WriteItem(new SaleWithLocation(DateTime.Now, 12.00m, 33.00m, Geolocation.UK));
-        subject.WriteItem(new SaleWithLocation(DateTime.Now, 13.00m, 32.00m, Geolocation.Taiwan));
-        subject.WriteItem(new SaleWithLocation(DateTime.Now, 14.00m, 31.00m, Geolocation.USA));
-        subject.WriteItem(new SaleWithLocation(DateTime.Now, 15.00m, 30.00m, Geolocation.Mexico));
-        subject.WriteItem(new SaleWithLocation(DateTime.Now, 16.00m, 29.00m, Geolocation.Ghana));
-        // and so on...
-        
-        // Get sales across Europe (that is, all in same 'Landmass' as Germany
-        var sales = subject.ReadDataAtPoint<decimal>("Price", "Landmass", Geolocation.Germany);
-        var costs = subject.ReadDataAtPoint<decimal>("Cost", "Landmass", Geolocation.Germany);
-        var profit = sales.Value - costs.Value;
-        //if (profit < 0) RunNewAdCampaign();
-        
-        Assert.That(costs.Value, Is.EqualTo(23.0m));
-        Assert.That(costs.Count, Is.EqualTo(2));
-        Assert.That(sales.Value, Is.EqualTo(67.0m));
-        Assert.That(sales.Count, Is.EqualTo(2));
-        Assert.That(profit, Is.EqualTo(44.0m));
-    }
-
-    [Test]
     public void data_is_persistent()
     {
         var baseDate = new DateTime(2020, 5, 5, 0, 0, 0, DateTimeKind.Utc);
@@ -487,6 +448,46 @@ public class TriangularListTests:DbTestBase
             Assert.That(values[0], Is.EqualTo(10.04m));
         }
     }
+    
+    [Test]
+    public void can_use_arbitrary_values_for_keys_and_ranks()
+    {
+        ResetDatabase();
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "GeoLocalRanks");
+        
+        var subject = TriangularList<Geolocation, SaleWithLocation>
+            .Create.UsingStorage(storage)
+            .KeyOn("INT", s=>s.SalesLocation, Regions.MinMax)
+            .Aggregate<decimal>("Cost", s=>s.Cost, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("Price", s=>s.SoldPrice, DecimalSumAggregate, "DECIMAL")
+            .Rank(1, "Country",   r=>(long)r)
+            .Rank(2, "Landmass",   r=>(long)Regions.LocationToLandmass(r))
+            .Rank(3, "Zone",    r=>(long)Regions.LocationToGeoZone(r))
+            .Rank(4, "Worldwide",    Regions.LocationToWorldwide)
+            .Build();
+        
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 10.00m, 35.00m, Geolocation.Angola));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 11.00m, 34.00m, Geolocation.Spain));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 12.00m, 33.00m, Geolocation.UK));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 13.00m, 32.00m, Geolocation.Taiwan));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 14.00m, 31.00m, Geolocation.USA));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 15.00m, 30.00m, Geolocation.Mexico));
+        subject.WriteItem(new SaleWithLocation(DateTime.Now, 16.00m, 29.00m, Geolocation.Ghana));
+        // and so on...
+        
+        // Get sales across Europe (that is, all in same 'Landmass' as Germany. Could use any European country here)
+        var sales = subject.ReadDataAtPoint<decimal>("Price", "Landmass", Geolocation.Germany);
+        var costs = subject.ReadDataAtPoint<decimal>("Cost", "Landmass", Geolocation.Germany);
+        var profit = sales.Value - costs.Value;
+        //if (profit < 0) RunNewAdCampaign();
+        
+        Assert.That(costs.Value, Is.EqualTo(23.0m));
+        Assert.That(costs.Count, Is.EqualTo(2));
+        Assert.That(sales.Value, Is.EqualTo(67.0m));
+        Assert.That(sales.Count, Is.EqualTo(2));
+        Assert.That(profit, Is.EqualTo(44.0m));
+    }
+
 
 
     // --- Rank Classification Functions --- //
