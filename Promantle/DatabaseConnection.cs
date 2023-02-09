@@ -10,7 +10,8 @@ namespace Promantle;
 /// </summary>
 public class DatabaseConnection : ITableAdaptor
 {
-    public const string SchemaName = "triangles"; // separate schema for triangular data
+    //public const string SchemaName = "triangles"; // separate schema for triangular data
+    public const string SchemaName = "public"; // separate schema for triangular data
     public const string CountPostfix = "_count";
     public const string ValuePostfix = "_value";
     public string ConnectionString { get; set; }
@@ -18,9 +19,10 @@ public class DatabaseConnection : ITableAdaptor
 
     public DatabaseConnection(int port, string tableName)
     {
-        ConnectionString = $"Server=127.0.0.1;Port={port};Database=defaultdb;User Id=unit;Password=test;Include Error Detail=true;CommandTimeout=10;SSL Mode=Require;Trust Server Certificate=true;";
+        //ConnectionString = $"Server=127.0.0.1;Port={port};Database=defaultdb;User Id=unit;Password=test;Include Error Detail=true;CommandTimeout=10;SSL Mode=Require;Trust Server Certificate=true;";
+        ConnectionString = "Server=127.0.0.1;Port=54448;Database=testdb;User Id=postgres;Password=password;Include Error Detail=true;CommandTimeout=360;Enlist=false;No Reset On Close=true;";
         BaseTableName = tableName;
-        //Console.WriteLine($"Connection: table={BaseTableName}; str='{ConnectionString}'");
+        Console.WriteLine($"Connection: table={BaseTableName}; str='{ConnectionString}'");
     }
 
     #region PoorMansDapper
@@ -167,9 +169,12 @@ SELECT EXISTS (
         var countCol = $"{aggregateName}{CountPostfix}";
         var valueCol = $"{aggregateName}{ValuePostfix}";
 
-        SimpleExecute($"UPSERT INTO {SchemaName}.{synthName}" +
+        SimpleExecute($"INSERT INTO {SchemaName}.{synthName}" +
                       $"       ( position, parentPosition,  lowerBound,  upperBound,  {countCol}, {valueCol})" +
-                      " VALUES (:position, :parentPosition, :lowerBound, :upperBound, :count,     :value)",
+                      " VALUES (:position, :parentPosition, :lowerBound, :upperBound, :count,     :value)" +
+                      " ON CONFLICT (position) DO UPDATE SET " +
+                      " position=:position, parentPosition=:parentPosition, lowerBound=:lowerBound, " +
+                      $"upperBound=:upperBound, {countCol}=:count, {valueCol}=:value;",
             new { position, parentPosition, lowerBound, upperBound, count, value });
     }
 
@@ -237,9 +242,14 @@ SELECT EXISTS (
             sb.AppendLine($",   {agg.Name}{ValuePostfix} {agg.Type}"); // the summed value
         }
         
-        sb.AppendLine(",   INDEX index_my_pos (position)");
-        sb.AppendLine(",   INDEX index_parent (parentPosition)");
+        // CRDB only:
+        //sb.AppendLine($",   INDEX index_my_pos_{synthName} (position)");
+        //sb.AppendLine($",   INDEX index_parent_{synthName} (parentPosition)");
         sb.Append(");"); // close definition
+        
+        // Postgres syntax:
+        sb.AppendLine($"CREATE INDEX index_my_pos_{synthName} ON  {SchemaName}.{synthName} (position);");
+        sb.AppendLine($"CREATE INDEX index_parent_{synthName} ON  {SchemaName}.{synthName} (parentPosition);");
         
         var query = sb.ToString();
         //Console.WriteLine(query);

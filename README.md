@@ -17,9 +17,9 @@ ranges of data at different levels of detail.
 * [x] Add ranks and aggregates
 * [x] Query points and ranges
 * [x] Get the upper/lower range of a single data point
-* [ ] Demonstrate averages
+* [x] Demonstrate averages
 * [ ] Demonstrate different data types
-* [ ] Demonstrate different aggregates (max/min/..?)
+* [x] Demonstrate different aggregates (max/min/..?)
 * [ ] Tests around very sparse data
 
 ```

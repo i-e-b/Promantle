@@ -226,15 +226,15 @@ public class TriangularListTests:DbTestBase
             subject.WriteItem(new TestComplexType(baseDate, i*30, 1.01m, 2.50m));
         }
         
-        var value = subject.ReadDataAtPoint<decimal>("Spent", "PerHour", new DateTime(2020,5,5,  5,0,0));
+        var value = subject.ReadDataAtPoint<decimal>("Spent", "PerHour", new DateTime(2020,5,5,  5,0,0, DateTimeKind.Utc));
         
         Console.WriteLine(value?.ToString() ?? "<null>");
         
         Assert.That(value, Is.Not.Null);
         Assert.That(value.Value, Is.EqualTo(2.02));
         Assert.That(value.Count, Is.EqualTo(2));
-        Assert.That(value.LowerBound.ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 05:00"));
-        Assert.That(value.UpperBound.ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 05:30"));
+        Assert.That(value.LowerBound.ToUniversalTime().ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 05:00")); // Bad when using Postgres?
+        Assert.That(value.UpperBound.ToUniversalTime().ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 05:30"));
     }
 
     [Test, Explicit("Takes around 6 minutes on my laptop.")]
@@ -269,7 +269,6 @@ public class TriangularListTests:DbTestBase
         sw.Restart();
         for (int i = 0; i < 10_000; i++) // 10_000 entries covering 30 years of data
         {
-            Console.Write(".");
             opCount += subject.WriteItem(new TestComplexType(baseDate, i*hr + i,           1.01m, 2.50m));
             opCount += subject.WriteItem(new TestComplexType(baseDate, i*day + i*hr + i,   2.01m, 4.50m));
         }
@@ -347,8 +346,8 @@ public class TriangularListTests:DbTestBase
         Assert.That(spent.Value / spent.Count, Is.EqualTo(totalSpends/dataPointCount).Within(0.0001));
         Assert.That(earned.Value / earned.Count, Is.EqualTo(totalEarns/dataPointCount).Within(0.0001));
         Assert.That(maximumIndividualValue.Count, Is.EqualTo(dataPointCount));
-        Assert.That(maximumIndividualValue.LowerBound.ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 00:00"));
-        Assert.That(maximumIndividualValue.UpperBound.ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 23:30"));
+        Assert.That(maximumIndividualValue.LowerBound.ToUniversalTime().ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 00:00"));
+        Assert.That(maximumIndividualValue.UpperBound.ToUniversalTime().ToString("yyyy-MM-dd HH:mm"), Is.EqualTo("2020-05-05 23:30"));
     }
 
     // --- Rank Classification Functions --- //
