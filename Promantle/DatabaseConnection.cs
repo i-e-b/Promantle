@@ -19,8 +19,12 @@ public class DatabaseConnection : ITableAdaptor
 
     public DatabaseConnection(int port, string tableName)
     {
+        // CRDB:
         //ConnectionString = $"Server=127.0.0.1;Port={port};Database=defaultdb;User Id=unit;Password=test;Include Error Detail=true;CommandTimeout=10;SSL Mode=Require;Trust Server Certificate=true;";
+        
+        // Postgres:
         ConnectionString = "Server=127.0.0.1;Port=54448;Database=testdb;User Id=postgres;Password=password;Include Error Detail=true;CommandTimeout=360;Enlist=false;No Reset On Close=true;";
+        
         BaseTableName = tableName;
         Console.WriteLine($"Connection: table={BaseTableName}; str='{ConnectionString}'");
     }
