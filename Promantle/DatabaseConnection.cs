@@ -1,4 +1,4 @@
-﻿#define UseCockroach
+﻿//#define UseCockroach
 
 using System.ComponentModel;
 using System.Data;

@@ -17,6 +17,7 @@ public class InMemPostgresDb: PersistentProcessBase, IDisposable
     private readonly Dictionary<string,string> _possiblePaths = new()
     {
         {"/usr/lib/postgresql/12/bin/postgres",@"/tmp/pgtemp"},
+        {"/usr/lib/postgresql/14/bin/postgres",@"/tmp/pgtemp"},
         {"/usr/lib/postgresql/15/bin/postgres",@"/tmp/pgtemp"},
         {@"C:\pgsql\bin\postgres.exe", @"C:\temp\pgtemp"} // C:\pgsql\bin\postgres.exe -D "C:\temp\pgtemp"
     };
@@ -269,6 +270,18 @@ To install on Ubuntu
 ```
 apt install postgresql postgresql-contrib
 ```
+
+`mkdir -p /tmp/run/postgresql`
+`mkdir -p /tmp/pgtemp`
+`/usr/lib/postgresql/14/bin/initdb -D /tmp/pgtemp`
+`vim /tmp/pgtemp/postgresql.conf`
+    (same changes as on Windows, plus these:)
+```
+unix_socket_directories = '/tmp/run/postgresql'
+```    
+
+`/usr/lib/postgresql/14/bin/postgres -D /tmp/pgtemp`
+and can be ended with `ctrl-C`
 
              */
     }
