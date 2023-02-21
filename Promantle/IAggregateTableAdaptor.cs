@@ -55,9 +55,19 @@ public interface IAggregateTableAdaptor
     /// Diagnostics. Write table info to the supplied StringBuilder
     /// </summary>
     void DumpTableForRank(StringBuilder sb, string groupName, int rank, int rankCount);
+    
+    /// <summary>
+    /// For migration. Read all values from a rank table
+    /// </summary>
+    IEnumerable<IDictionary<string, object?>> SelectEntireTableAtRank(string name, int rank, int rankCount);
 
     /// <summary>
     /// Delete the table for a given name and rank.
     /// </summary>
     void DeleteTableForRank(string name, int rank, int rankCount);
+
+    /// <summary>
+    /// Get a storage column name for an aggregate name
+    /// </summary>
+    string GetValueColumnName(string aggregateName);
 }

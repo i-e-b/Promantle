@@ -223,11 +223,34 @@ SELECT EXISTS (
         sb.AppendLine();
     }
 
+    public IEnumerable<IDictionary<string, object?>> SelectEntireTableAtRank(string groupName, int rank, int rankCount)
+    {
+        var synthName = SynthName(groupName, rank, rankCount);
+        
+        return SimpleSelectMany($"SELECT * FROM {SchemaName}.{synthName};", null, ReaderRowToDictionary);
+    }
+
+    private static IDictionary<string,object?> ReaderRowToDictionary(IDataRecord rdr)
+    {
+        var fields = rdr.FieldCount;
+        var outp = new Dictionary<string, object?>(fields);
+        for (int i = 0; i < fields; i++)
+        {
+            outp.Add(rdr.GetName(i), rdr.GetValue(i));
+        }
+        return outp;
+    }
+
     public void DeleteTableForRank(string groupName, int rank, int rankCount)
     {
         var synthName = SynthName(groupName, rank, rankCount);
         
         SimpleExecute($"DROP TABLE {SchemaName}.{synthName};", null);
+    }
+
+    public string GetValueColumnName(string aggregateName)
+    {
+        return $"{aggregateName}{ValuePostfix}".ToLowerInvariant();
     }
 
     private int ReaderRowToString(StringBuilder sb, IDataRecord rdr)

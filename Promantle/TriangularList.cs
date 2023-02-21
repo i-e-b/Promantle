@@ -71,6 +71,7 @@ public class TriangularList<TK, TV>
     private readonly IAggregateTableAdaptor _storage;
     private readonly KeyFunction _keyFunction;
     private readonly KeyMinMaxFunction _minMaxFunction;
+    private readonly string _keyStorageType;
     private readonly Dictionary<string, Aggregator> _aggregateByName;
     private readonly Dictionary<string, Rank> _ranksByName;
     private readonly Dictionary<int, Rank> _ranksByNumber;
@@ -201,6 +202,14 @@ public class TriangularList<TK, TV>
     /// Helper to build triangular lists
     /// </summary>
     public static TriangularListBuilder<TK, TV> Create(string name) => new(name);
+    
+
+    /// <summary>
+    /// Helper to build triangular lists, based on an existing list.
+    /// You must supply all the new Ranks before building, but existing
+    /// aggregations will be copied.
+    /// </summary>
+    public static TriangularListBuilder<TK, TV> MigrateFrom(TriangularList<TK,TV> source, string newName) => new (source, newName);
 
     /// <summary>
     /// Create a new list, with: a keying function, a set of ranks, and a set of data aggregations.
@@ -219,6 +228,7 @@ public class TriangularList<TK, TV>
         _storage = storage;
         _keyFunction = keyFunction;
         _minMaxFunction = minMaxFunction;
+        _keyStorageType = keyStorageType;
 
         // Build dictionaries from the list
         // We use our own rank numbers, user can query only by name.
@@ -444,6 +454,69 @@ public class TriangularList<TK, TV>
     }
     
     /// <summary>
+    /// Read all rank-zero data for all aggregations.
+    /// This is used for migration.
+    /// </summary>
+    internal IEnumerable<IDictionary<string, object?>> ReadAllRankZero()
+    {
+        if (_deleted) throw new Exception(DeletedMessage);
+        
+        return _storage.SelectEntireTableAtRank(_name, 0, _rankCount);
+    }
+    
+    /// <summary>
+    /// Write raw value for all aggregations.
+    /// This is used for migration.
+    /// </summary>
+    public void WriteItemRaw(IDictionary<string,object?> item)
+    {
+        if (_deleted) throw new Exception(DeletedMessage);
+        
+        // Get the key out of the value
+        var keyRaw = item[@"lowerbound"]; // Postgres and CRDB lowercase everything by default.
+        if (keyRaw is not TK key)
+        {
+            throw new Exception($"Expected stored key {typeof(TK).Name}, but got {keyRaw?.GetType().Name ?? "<null>"}");
+        }
+
+        var zeroRankIndex = _nextZero++;
+        
+        // TODO: optimise this
+        // for each aggregation, go through the ranks and re-sum data
+        foreach (var kvp in _aggregateByName)
+        {
+            var aggName = kvp.Key;
+            var aggCombine = kvp.Value.CombineValues;
+            
+            // Write rank zero data
+            var rzKey = _storage.GetValueColumnName(kvp.Key);
+            var rzObject = item[rzKey];//kvp.Value.SelectValue(item);
+            var parentPos = _ranksByNumber[1].RankFunction(key);
+            _storage.WriteAtRank(_name, 0, _rankCount, aggName, parentPos, zeroRankIndex, 1, rzObject, key, key); // for rank zero, upper and lower bounds are the same
+            
+            // Work up through all ranks, re-aggregating the data
+            for (int childRank = 0; childRank < _rankCount; childRank++)
+            {
+                var parentRank = childRank+1;
+                var grandparentRank = parentRank+1;
+                
+                // aggregate data under a parent
+                parentPos = _ranksByNumber[parentRank].RankFunction(key);
+                var child = _storage.ReadWithParentRank(_name, childRank, _rankCount, aggName, parentPos).ToList();
+                if (child.Count < 1) continue;
+                
+                var newCount = child.Sum(av => av.Count);
+                var newAggValue = child.Select(av=>av.Value).Aggregate((a,b) => aggCombine(a,b));
+                GetKeyRange(child, out var lower, out var upper);
+                
+                // write back
+                var grandparentPos = grandparentRank <= _rankCount ? _ranksByNumber[grandparentRank].RankFunction(key) : 0;
+                _storage.WriteAtRank(_name, parentRank, _rankCount, aggName, grandparentPos, parentPos, newCount, newAggValue, lower, upper);
+            }
+        }
+    }
+    
+    /// <summary>
     /// Read a range of aggregate values over a range of key values.
     /// For full datapoint details, see <see cref="ReadDataOverRange{TA}"/>
     /// </summary>
@@ -561,6 +634,13 @@ public class TriangularList<TK, TV>
             _storage.DeleteTableForRank(_name, rank, _rankCount);
         }
     }
+
+    // internal functions for migration
+    internal IAggregateTableAdaptor GetStorage() => _storage;
+    internal Dictionary<string, Aggregator> GetAggregates() => _aggregateByName.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+    internal string GetKeyStorageType() => _keyStorageType;
+    public KeyFunction GetKeyFunction() => _keyFunction;
+    public KeyMinMaxFunction GetKeyMinMax() => _minMaxFunction;
 }
 
 /// <summary>
@@ -570,7 +650,9 @@ public class TriangularList<TK, TV>
 /// <typeparam name="TV">Data type</typeparam>
 public class TriangularListBuilder<TK, TV>
 {
+    private readonly TriangularList<TK, TV>? _migrationSource;
     private readonly string _name;
+    private readonly bool _isMigration;
 
     // Key stuff
     private string? _keyStorageType;
@@ -586,8 +668,23 @@ public class TriangularListBuilder<TK, TV>
 
     public TriangularListBuilder(string name)
     {
+        _isMigration = false;
+        _migrationSource = null;
         _name = name;
         _aggregateByName = new Dictionary<string, TriangularList<TK, TV>.Aggregator>();
+        _ranksByNumber = new Dictionary<int, TriangularList<TK, TV>.Rank>();
+    }
+
+    public TriangularListBuilder(TriangularList<TK,TV> source, string newName)
+    {
+        _isMigration = true;
+        _migrationSource = source;
+        _name = newName;
+        _keyFunction = source.GetKeyFunction();
+        _keyStorageType = source.GetKeyStorageType();
+        _minMaxFunction = source.GetKeyMinMax();
+        _storage = source.GetStorage(); // use same storage as source by default, but it can be changed
+        _aggregateByName = source.GetAggregates();
         _ranksByNumber = new Dictionary<int, TriangularList<TK, TV>.Rank>();
     }
 
@@ -610,6 +707,8 @@ public class TriangularListBuilder<TK, TV>
     /// return the ranges of keys that are present in each aggregated value in a rank.</param>
     public TriangularListBuilder<TK, TV> KeyOn(string keyStorageType, TriangularList<TK, TV>.KeyFunction keyFunction, TriangularList<TK, TV>.KeyMinMaxFunction minMax)
     {
+        if (_isMigration) throw new Exception("Can't change key during migration");
+        
         if (_keyStorageType is null) _keyStorageType = keyStorageType;
         else throw new Exception("Key storage type already supplied");
         
@@ -643,9 +742,21 @@ public class TriangularListBuilder<TK, TV>
     /// <param name="storageType">Database column type to store the values</param>
     public TriangularListBuilder<TK, TV> Aggregate<TA>(string name, Func<TV, TA> selector, Func<TA, TA, TA> combiner, string storageType)
     {
+        if (_isMigration) throw new Exception("Can't add aggregations during migration");
         if (_aggregateByName.ContainsKey(name)) throw new Exception($"Duplicated aggregation '{name}'");
 
         _aggregateByName.Add(name, new TriangularList<TK, TV>.Aggregator<TA>(selector, combiner, storageType));
+        return this;
+    }
+    
+    /// <summary>
+    /// Remove an aggregate that has been added to this list builder.
+    /// </summary>
+    public TriangularListBuilder<TK, TV> RemoveAggregate(string name)
+    {
+        if ( ! _aggregateByName.ContainsKey(name)) throw new Exception($"Aggregation '{name}' does not exist");
+        
+        _aggregateByName.Remove(name);
         return this;
     }
 
@@ -666,6 +777,20 @@ public class TriangularListBuilder<TK, TV>
         if (orderedRanks.Count < 1) throw new Exception("No ranks were supplied");
 
         var result = new TriangularList<TK, TV>(_name, _storage, _keyFunction, _minMaxFunction, _keyStorageType, orderedRanks, _aggregateByName);
+
+        if (_isMigration)
+        {
+            if (_migrationSource is null) throw new Exception("Migration source is null");
+            
+            // For each aggregation in the new triangular list, copy the rank-zero
+            // items from the source into the new list. This is done simplistically,
+            // and could be optimised by batching.
+            var enumerator = _migrationSource.ReadAllRankZero();
+            foreach (var item in enumerator)
+            {
+                result.WriteItemRaw(item);
+            }
+        }
 
         return result;
     }

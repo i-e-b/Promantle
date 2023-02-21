@@ -710,6 +710,50 @@ public class TriangularListTests : DbTestBase
         Assert.That(values[0], Is.EqualTo(10.04m));
     }
 
+    [Test] // Old list needs to have aggregate data as stored in old list. Ranks can be different
+    public void can_migrate_one_triangular_list_to_another()
+    {
+        ResetDatabase();
+        var storage = new DatabaseConnection(SqlPort);
+
+        var subject = TriangularList<DateTime, TestComplexType>
+            .Create("sourceList")
+            .UsingStorage(storage)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
+            .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Rank(0, "PerHour", DateTimeHours)
+            .Build();
+
+        subject.WriteItem(new TestComplexType("2020-05-05T09:11:12", 5.0m, 2.5m));
+        subject.WriteItem(new TestComplexType("2020-05-05T10:11:12", 5.1m, 2.5m));
+        subject.WriteItem(new TestComplexType("2020-05-05T10:20:30", 5.2m, 2.5m));
+        subject.WriteItem(new TestComplexType("2020-05-05T10:30:40", 5.3m, 2.5m));
+        subject.WriteItem(new TestComplexType("2020-05-05T11:05:01", 5.4m, 2.5m));
+        subject.WriteItem(new TestComplexType("2020-05-05T12:05:01", 5.5m, 2.5m));
+        
+        var subjectMigrated = TriangularList<DateTime, TestComplexType>
+            .MigrateFrom(subject, newName: "destList")
+            .RemoveAggregate("Earned") // NOT required. We can't add an aggregate during a migration, as we didn't store the data.
+            // We MUST add our new ranking ranges. The default set is blank (which will fail on `Build()`)
+            .Rank(1, "PerMinute", DateTimeMinutes)
+            .Rank(2, "PerHour", DateTimeHours)
+            .Rank(3, "PerDay", DateTimeDays)
+            .Rank(4, "PerWeek", DateTimeWeeks)
+            .Build();
+
+        // Read all items in the lower rank (in this case, base items)
+        var values = subjectMigrated.ReadDataUnderPoint<decimal>("Spent", "PerHour", new DateTime(2020, 5, 5, 10, 0, 0, DateTimeKind.Utc)).ToList();
+
+        Assert.That(values.Count, Is.EqualTo(3));
+        Assert.That(values[0].Value, Is.EqualTo(5.1m));
+        Assert.That(values[0].Count, Is.EqualTo(1));
+        Assert.That(values[1].Value, Is.EqualTo(5.2m));
+        Assert.That(values[1].Count, Is.EqualTo(1));
+        Assert.That(values[2].Value, Is.EqualTo(5.3m));
+        Assert.That(values[2].Count, Is.EqualTo(1));
+    }
+
     #region Test helpers
     private static int SqlPort=> InMemCockroachDb.LastValidSqlPort;
     
