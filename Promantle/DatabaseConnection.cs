@@ -8,9 +8,10 @@ using Npgsql;
 namespace Promantle;
 
 /// <summary>
-/// Really dumb database adaptor for testing
+/// Really dumb database adaptor for testing.
+/// You'd probably want to replace this in a real application.
 /// </summary>
-public class DatabaseConnection : ITableAdaptor
+public class DatabaseConnection : IAggregateTableAdaptor, IMultiPageTableAdaptor
 {
 #if UseCockroach
     public const string SchemaName = "triangles"; // separate schema for triangular data
@@ -20,21 +21,6 @@ public class DatabaseConnection : ITableAdaptor
     public const string CountPostfix = "_count";
     public const string ValuePostfix = "_value";
     public string ConnectionString { get; set; }
-    public string BaseTableName { get; set; }
-
-    public DatabaseConnection(int port, string tableName)
-    {
-#if UseCockroach
-        // CRDB:
-        ConnectionString = $"Server=127.0.0.1;Port={port};Database=defaultdb;User Id=unit;Password=test;Include Error Detail=true;CommandTimeout=10;SSL Mode=Require;Trust Server Certificate=true;";
-#else
-        // Postgres:
-        ConnectionString = "Server=127.0.0.1;Port=54448;Database=testdb;User Id=postgres;Password=password;Include Error Detail=true;CommandTimeout=360;Enlist=false;No Reset On Close=true;";
-#endif
-        
-        BaseTableName = tableName;
-        Console.WriteLine($"Connection: table={BaseTableName}; str='{ConnectionString}'");
-    }
 
     #region PoorMansDapper
     /// <summary>
@@ -128,12 +114,26 @@ SELECT EXISTS (
     }
     #endregion
     
-    public IEnumerable<AggregateValue> ReadWithRank(int rank, int rankCount, string aggregateName, long start, long end)
+    #region Aggregates
+
+    public DatabaseConnection(int port)
+    {
+#if UseCockroach
+        // CRDB:
+        ConnectionString = $"Server=127.0.0.1;Port={port};Database=defaultdb;User Id=unit;Password=test;Include Error Detail=true;CommandTimeout=10;SSL Mode=Require;Trust Server Certificate=true;";
+#else
+        // Postgres:
+        ConnectionString = "Server=127.0.0.1;Port=54448;Database=testdb;User Id=postgres;Password=password;Include Error Detail=true;CommandTimeout=360;Enlist=false;No Reset On Close=true;";
+#endif
+        
+        Console.WriteLine($"Connection: str='{ConnectionString}'");
+    }
+    public IEnumerable<AggregateValue> ReadWithRank(string groupName, int rank, int rankCount, string aggregateName, long start, long end)
     {
         // See `EnsureTableForRank` for table definition
 
         // TODO: protect aggregateName from injection
-        var synthName = SynthName(rank, rankCount);
+        var synthName = SynthName(groupName, rank, rankCount);
         return SimpleSelectMany<AggregateValue>(
             $"SELECT position, parentPosition, COALESCE({aggregateName}{CountPostfix},0), {aggregateName}{ValuePostfix}, lowerBound,  upperBound" +
             $" FROM {SchemaName}.{synthName}" +
@@ -142,12 +142,12 @@ SELECT EXISTS (
             ReadAggregateValue);
     }
 
-    public IEnumerable<AggregateValue> ReadWithParentRank(int rank, int rankCount, string aggregateName, long parentPosition)
+    public IEnumerable<AggregateValue> ReadWithParentRank(string groupName, int rank, int rankCount, string aggregateName, long parentPosition)
     {
         // See `EnsureTableForRank` for table definition
         
         // TODO: protect aggregateName from injection
-        var synthName = SynthName(rank, rankCount);
+        var synthName = SynthName(groupName, rank, rankCount);
         return SimpleSelectMany<AggregateValue>(
             $"SELECT position, parentPosition, COALESCE({aggregateName}{CountPostfix},0), {aggregateName}{ValuePostfix}, lowerBound,  upperBound" +
             $" FROM {SchemaName}.{synthName}" +
@@ -156,12 +156,12 @@ SELECT EXISTS (
             ReadAggregateValue);
     }
 
-    public AggregateValue? ReadAtRank(int rank, int rankCount, string aggregateName, long position)
+    public AggregateValue? ReadAtRank(string groupName, int rank, int rankCount, string aggregateName, long position)
     {
         // See `EnsureTableForRank` for table definition
         
         // TODO: protect aggregateName from injection
-        var synthName = SynthName(rank, rankCount);
+        var synthName = SynthName(groupName, rank, rankCount);
         return SimpleSelectMany<AggregateValue>(
                 $"SELECT position, parentPosition, {aggregateName}{CountPostfix}, {aggregateName}{ValuePostfix}, lowerBound,  upperBound" +
                 $" FROM {SchemaName}.{synthName}" +
@@ -181,12 +181,12 @@ SELECT EXISTS (
         };
     }
 
-    public void WriteAtRank(int rank, int rankCount,
+    public void WriteAtRank(string groupName, int rank, int rankCount,
         string aggregateName, long parentPosition, long position, long count,
         object? value, object? lowerBound, object? upperBound)
     {
         // See `EnsureTableForRank` for table definition
-        var synthName = SynthName(rank, rankCount);
+        var synthName = SynthName(groupName, rank, rankCount);
         var countCol = $"{aggregateName}{CountPostfix}";
         var valueCol = $"{aggregateName}{ValuePostfix}";
 
@@ -199,11 +199,11 @@ SELECT EXISTS (
             new { position, parentPosition, lowerBound, upperBound, count, value });
     }
 
-    public long MaxPosition(int rank, int rankCount)
+    public long MaxPosition(string groupName, int rank, int rankCount)
     {
         try
         {
-            var synthName = SynthName(rank, rankCount);
+            var synthName = SynthName(groupName, rank, rankCount);
             return SimpleSelect($"SELECT MAX(position) FROM {SchemaName}.{synthName};", new { }) as long? ?? 0;
         }
         catch
@@ -212,9 +212,9 @@ SELECT EXISTS (
         }
     }
 
-    public void DumpTableForRank(StringBuilder sb, int rank, int rankCount)
+    public void DumpTableForRank(StringBuilder sb, string groupName, int rank, int rankCount)
     {
-        var synthName = SynthName(rank, rankCount);
+        var synthName = SynthName(groupName, rank, rankCount);
         
         sb.AppendLine();
         sb.AppendLine(synthName);
@@ -234,9 +234,9 @@ SELECT EXISTS (
         return end;
     }
 
-    public bool EnsureTableForRank(int rank, int rankCount, string keyType, params BasicColumn[] aggregates)
+    public bool EnsureTableForRank(string groupName, int rank, int rankCount, string keyType, params BasicColumn[] aggregates)
     {
-        var synthName = SynthName(rank, rankCount);
+        var synthName = SynthName(groupName, rank, rankCount);
         
         if (TableExists(SchemaName, synthName)) return false; // already exists
 
@@ -282,9 +282,32 @@ SELECT EXISTS (
         return true;
     }
 
-    private string SynthName(int rank, int rankCount)
+    private string SynthName(string baseName, int rank, int rankCount)
     {
-        var synthName = $"{BaseTableName}_{rank}_of_{rankCount}";
+        var synthName = $"{baseName}_{rank}_of_{rankCount}";
         return synthName;
     }
+    
+    #endregion
+    
+    #region MultiPaging
+
+    public bool EnsurePagedTable(string baseName, List<BasicColumn> dbColumns)
+    {
+        var synthName = $"{baseName}_multiPage";
+        
+        if (TableExists(SchemaName, synthName)) return false; // already exists
+        
+        var sb = new StringBuilder();
+        
+        sb.Append($"CREATE TABLE {SchemaName}.{synthName}");
+        sb.AppendLine("(");
+        
+        // IEB: TODO: Finish table def
+        
+        return true;
+    }
+
+    #endregion
+
 }

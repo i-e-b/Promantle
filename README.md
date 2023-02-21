@@ -119,17 +119,7 @@ var profit = sales.Value - costs.Value;
 if (profit < 0) RunNewAdCampaign();
 ```
 
-### TO DO:
-
-* [x] Add ranks and aggregates
-* [x] Query points and ranges
-* [x] Get the upper/lower range of a single data point
-* [x] Demonstrate averages
-* [x] Demonstrate different data and key types
-* [x] Demonstrate data persistence
-* [x] Demonstrate different aggregates (max/min/..?)
-* [ ] Tests around very sparse data
-* [x] Query for source data items under a given rank-1 value.
+Data layout concept 
 
 ```
 
@@ -152,4 +142,49 @@ L     |____  KN      |__ KN
 M     |     :        |  :
 N    /      :       /   :
 
+```
+
+## Multi-page data pre sorted
+
+### Idea
+
+For cached queries, each column has a matching 'page-column', that gives the page is should be on *if sorted by that column*
+
+That way, we can have a single 'paged' data table, but still correctly sort and page by any column.
+
+e.g. (using sample data below)
+
+To get page 3 when ordering by `Type`
+```
+SELECT * FROM AssetTable WHERE Type_page = 3 ORDER BY Type_data;
+```
+
+To get page 1 when ordering by `AssetId`
+```
+SELECT * FROM AssetTable WHERE AssetId_page = 1 ORDER BY AssetId_data;
+```
+
+To get "2nd" page when sorting by location in reverse order
+```
+SELECT * FROM AssetTable WHERE Location_page = (MAX(Location_page)-1) ORDER BY Location_data DESC;
+```
+
+### Example
+
+Page size of two to make the example short. Should really be 10 or so.
+
+Asset Table
+
+```
+AssetId_data    AssetId_page    Name_data    Name_page    Location_data    Location_page    Type_data        Type_page    AcquiredDate_data    AcquiredDate_page
+1               1               Chair        2            London           2                OfficeFurniture  3            2021-01-05           2
+2               1               Cabinet      1            London           2                OfficeFurniture  3            2022-06-04           5
+3               2               Desk         4            London           3                OfficeFurniture  4            2020-08-11           1
+4               2               Computer     3            London           3                IT               2            2021-07-05           3
+5               3               Chair        2            Paris            4                OfficeFurniture  5            2022-05-04           4
+6               3               Cabinet      1            Paris            4                OfficeFurniture  4            2021-05-05           3
+7               4               Desk         4            Paris            5                OfficeFurniture  5            2020-06-08           1
+8               4               Computer     3            Paris            5                IT               2            2021-04-04           2
+9               5               Server       5            Berlin           1                IT               1            2022-01-05           4
+10              5               Server       5            Berlin           1                IT               1            2023-01-11           5
 ```

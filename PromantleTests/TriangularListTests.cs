@@ -1,6 +1,7 @@
 ﻿//#define UseCockroach
 
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Npgsql;
 using NUnit.Framework;
 using Promantle;
@@ -18,17 +19,17 @@ public class TriangularListTests : DbTestBase
     public void the_database_hooks_work()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "test1");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
 
         // Create table
-        var written = storage.EnsureTableForRank(1, 1, "INT", new BasicColumn("test", "int"));
+        var written = storage.EnsureTableForRank("hookTest", 1, 1, "INT", new BasicColumn("test", "int"));
         Console.WriteLine($"Wrote DB: {written}");
 
         // Write single value
-        storage.WriteAtRank(1, 1, "test", 1, 2, 3, 4, 15, 20);
+        storage.WriteAtRank("hookTest", 1, 1, "test", 1, 2, 3, 4, 15, 20);
 
         // Read single value back
-        var value = storage.ReadAtRank(1, 1, "test", 2);
+        var value = storage.ReadAtRank("hookTest", 1, 1, "test", 2);
         Assert.That(value?.ParentPosition, Is.EqualTo(1));
         Assert.That(value?.Position, Is.EqualTo(2));
         Assert.That(value?.Count, Is.EqualTo(3));
@@ -37,12 +38,12 @@ public class TriangularListTests : DbTestBase
         Assert.That(value?.UpperBound, Is.EqualTo(20));
 
         // More values
-        storage.WriteAtRank(rank: 1, rankCount: 1, aggregateName: "test", parentPosition: 2, position: 3, count: 4, value: 5, lowerBound: 25, upperBound: 30);
-        storage.WriteAtRank(1, 1, "test", 2, 4, 5, 6, 35, 40);
-        storage.WriteAtRank(1, 1, "test", 2, 5, 6, 7, 45, 50);
+        storage.WriteAtRank("hookTest", rank: 1, rankCount: 1, aggregateName: "test", parentPosition: 2, position: 3, count: 4, value: 5, lowerBound: 25, upperBound: 30);
+        storage.WriteAtRank("hookTest", 1, 1, "test", 2, 4, 5, 6, 35, 40);
+        storage.WriteAtRank("hookTest", 1, 1, "test", 2, 5, 6, 7, 45, 50);
 
         // Read multiple values back
-        var values = storage.ReadWithRank(1, 1, "test", 2, 4).ToList();
+        var values = storage.ReadWithRank("hookTest", 1, 1, "test", 2, 4).ToList();
         Assert.That(values.Count, Is.EqualTo(3));
 
         Assert.That(values[0].Value, Is.EqualTo(4));
@@ -67,7 +68,7 @@ public class TriangularListTests : DbTestBase
         Assert.That(values[2].ParentPosition, Is.EqualTo(2));
 
         // Read back by parent
-        var parentValues = storage.ReadWithParentRank(1, 1, "test", 2).ToList();
+        var parentValues = storage.ReadWithParentRank("hookTest", 1, 1, "test", 2).ToList();
         Assert.That(parentValues.Count, Is.EqualTo(3));
         Assert.That(parentValues[0].Value, Is.EqualTo(5));
         Assert.That(parentValues[1].Value, Is.EqualTo(6));
@@ -78,10 +79,11 @@ public class TriangularListTests : DbTestBase
     public void can_create_a_new_list_with_functions()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "test1");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
-            .Create.UsingStorage(storage)
+            .Create("test1")
+            .UsingStorage(storage)
             .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -95,10 +97,11 @@ public class TriangularListTests : DbTestBase
     public void can_write_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "test1");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
-            .Create.UsingStorage(storage)
+            .Create("scaleTest")
+            .UsingStorage(storage)
             .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -115,10 +118,11 @@ public class TriangularListTests : DbTestBase
     public void can_read_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "test1");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
-            .Create.UsingStorage(storage)
+            .Create("scaleTest")
+            .UsingStorage(storage)
             .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -142,10 +146,11 @@ public class TriangularListTests : DbTestBase
     public void can_read_a_range_over_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "test1");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
-            .Create.UsingStorage(storage)
+            .Create("rangeTest")
+            .UsingStorage(storage)
             .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -169,10 +174,11 @@ public class TriangularListTests : DbTestBase
     public void can_read_the_children_of_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "test1");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
-            .Create.UsingStorage(storage)
+            .Create("childOfValue")
+            .UsingStorage(storage)
             .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -202,10 +208,11 @@ public class TriangularListTests : DbTestBase
     public void can_read_a_range_over_multiple_scaled_values()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "rangeTest");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
-            .Create.UsingStorage(storage)
+            .Create("rangeTest")
+            .UsingStorage(storage)
             .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -246,10 +253,11 @@ public class TriangularListTests : DbTestBase
     public void aggregated_data_can_be_read_with_count_and_source_key_range()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "rangeTest");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
-            .Create.UsingStorage(storage)
+            .Create("countAndSourceKey")
+            .UsingStorage(storage)
             .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -287,12 +295,12 @@ public class TriangularListTests : DbTestBase
     public void can_handle_a_large_input_data_set()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "rangeTest");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
         var sw = new Stopwatch();
         sw.Restart();
 
         var subject = TriangularList<DateTime, TestComplexType>
-            .Create.UsingStorage(storage)
+            .Create("largeData").UsingStorage(storage)
             .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -345,10 +353,11 @@ public class TriangularListTests : DbTestBase
     public void can_aggregate_the_same_data_multiple_different_ways()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "rangeTest");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
-            .Create.UsingStorage(storage)
+            .Create("multiAggregate")
+            .UsingStorage(storage)
             .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -409,10 +418,11 @@ public class TriangularListTests : DbTestBase
         // Connection 1
         {
             ResetDatabase();
-            var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "persistentTest");
+            var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
 
             var subject = TriangularList<DateTime, TestComplexType>
-                .Create.UsingStorage(storage)
+                .Create("persistent")
+                .UsingStorage(storage)
                 .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
                 .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
                 .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -438,11 +448,12 @@ public class TriangularListTests : DbTestBase
 
         // Connection 2
         {
-            var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "persistentTest");
+            var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
 
             // create a new list with same parameters as original
-            var subject2 = TriangularList<DateTime, TestComplexType>
-                .Create.UsingStorage(storage)
+            var subject2 = TriangularList<DateTime, TestComplexType> // Must be EXACTLY same parameters
+                .Create("persistent")
+                .UsingStorage(storage)
                 .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
                 .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
                 .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -472,12 +483,13 @@ public class TriangularListTests : DbTestBase
         // loads of zero-values for unoccupied buckets.
         
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "rangeTestSparse");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
         var sw = new Stopwatch();
         sw.Restart();
 
         var subject = TriangularList<DateTime, TestComplexType>
-            .Create.UsingStorage(storage)
+            .Create("rangeSparse")
+            .UsingStorage(storage)
             .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
             .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
@@ -493,7 +505,6 @@ public class TriangularListTests : DbTestBase
         sw.Stop();
         Console.WriteLine($"Initial setup took {sw.Elapsed};");
 
-        var hr = 60.0;
         var opCount = 0;
 
         sw.Restart();
@@ -533,10 +544,11 @@ public class TriangularListTests : DbTestBase
     public void can_use_arbitrary_values_for_keys_and_ranks()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort, "GeoLocalRanks");
+        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
         
         var subject = TriangularList<Geolocation, SaleWithLocation>
-            .Create.UsingStorage(storage)
+            .Create("GeoLocaleRanks")
+            .UsingStorage(storage)
             .KeyOn("INT", s=>s.SalesLocation, Regions.MinMax)
             .Aggregate<decimal>("Cost", s=>s.Cost, DecimalSumAggregate, "DECIMAL")
             .Aggregate<decimal>("Price", s=>s.SoldPrice, DecimalSumAggregate, "DECIMAL")
@@ -740,6 +752,8 @@ public static class Regions
 }
 
 
+[SuppressMessage("ReSharper", "UnusedAutoPropertyAccessor.Global")]
+[SuppressMessage("ReSharper", "AutoPropertyCanBeMadeGetOnly.Global")]
 public class SaleWithLocation
 {
     public DateTime RecordedDate { get; init; }
@@ -747,7 +761,6 @@ public class SaleWithLocation
     public decimal SoldPrice { get; init; }
     public Geolocation SalesLocation { get; init; }
 
-    public SaleWithLocation() { }
 
     public SaleWithLocation(DateTime date, decimal cost, decimal soldFor, Geolocation location)
     {

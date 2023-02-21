@@ -1,4 +1,5 @@
-﻿using System.Text;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Text;
 
 namespace Promantle;
 
@@ -8,6 +9,7 @@ namespace Promantle;
 /// </summary>
 /// <typeparam name="TA">Type of the aggregated value</typeparam>
 /// <typeparam name="TK">Type of the key</typeparam>
+[SuppressMessage("ReSharper", "PropertyCanBeMadeInitOnly.Global")]
 public class AggregateValue<TA, TK>
 {
     /// <summary>
@@ -65,7 +67,8 @@ public class AggregateValue<TA, TK>
 /// </remarks>
 public class TriangularList<TK, TV>
 {
-    private readonly ITableAdaptor _storage;
+    private readonly string _name;
+    private readonly IAggregateTableAdaptor _storage;
     private readonly KeyFunction _keyFunction;
     private readonly KeyMinMaxFunction _minMaxFunction;
     private readonly string _keyStorageType;
@@ -191,20 +194,21 @@ public class TriangularList<TK, TV>
     /// <summary>
     /// Helper to build triangular lists
     /// </summary>
-    public static TriangularListBuilder<TK, TV> Create => new();
+    public static TriangularListBuilder<TK, TV> Create(string name) => new(name);
 
     /// <summary>
     /// Create a new list, with: a keying function, a set of ranks, and a set of data aggregations.
     /// <p></p>
     /// For a more intuitive way to create, see <see cref="Create"/>
     /// </summary>
-    public TriangularList(ITableAdaptor storage,
+    public TriangularList(string name, IAggregateTableAdaptor storage,
         KeyFunction keyFunction, KeyMinMaxFunction minMaxFunction, string keyStorageType,
         List<Rank> orderedRanks,
         Dictionary<string, Aggregator> aggregateByName)
     {
         if (orderedRanks.Count < 1) throw new Exception("Triangular list must have at least one rank");
-        
+
+        _name = name;
         _storage = storage;
         _keyFunction = keyFunction;
         _minMaxFunction = minMaxFunction;
@@ -237,10 +241,10 @@ public class TriangularList<TK, TV>
         _rankCount = _ranksByNumber.Count;
         for (int rank = 0; rank <= _rankCount; rank++)
         {
-            _storage.EnsureTableForRank(rank, _rankCount, _keyStorageType, aggregateNames);
+            _storage.EnsureTableForRank(_name, rank, _rankCount, _keyStorageType, aggregateNames);
         }
         
-        _nextZero = _storage.MaxPosition(0, _rankCount) + 1;
+        _nextZero = _storage.MaxPosition(_name, 0, _rankCount) + 1;
     }
 
     /// <summary>
@@ -266,7 +270,7 @@ public class TriangularList<TK, TV>
             // Write rank zero data
             var rzObject = kvp.Value.SelectValue(item);
             var parentPos = _ranksByNumber[1].RankFunction(key);
-            _storage.WriteAtRank(0, _rankCount, aggName, parentPos, zeroRankIndex, 1, rzObject, key, key); // for rank zero, upper and lower bounds are the same
+            _storage.WriteAtRank(_name, 0, _rankCount, aggName, parentPos, zeroRankIndex, 1, rzObject, key, key); // for rank zero, upper and lower bounds are the same
             
             // Work up through all ranks, re-aggregating the data
             for (int childRank = 0; childRank < _rankCount; childRank++)
@@ -276,7 +280,7 @@ public class TriangularList<TK, TV>
                 
                 // aggregate data under a parent
                 parentPos = _ranksByNumber[parentRank].RankFunction(key);
-                var child = _storage.ReadWithParentRank(childRank, _rankCount, aggName, parentPos).ToList();
+                var child = _storage.ReadWithParentRank(_name, childRank, _rankCount, aggName, parentPos).ToList();
                 if (child.Count < 1) continue;
                 
                 calcCount += child.Count;
@@ -286,7 +290,7 @@ public class TriangularList<TK, TV>
                 
                 // write back
                 var grandparentPos = grandparentRank <= _rankCount ? _ranksByNumber[grandparentRank].RankFunction(key) : 0;
-                _storage.WriteAtRank(parentRank, _rankCount, aggName, grandparentPos, parentPos, newCount, newAggValue, lower, upper);
+                _storage.WriteAtRank(_name, parentRank, _rankCount, aggName, grandparentPos, parentPos, newCount, newAggValue, lower, upper);
             }
         }
         return calcCount;
@@ -354,7 +358,7 @@ public class TriangularList<TK, TV>
         // Read the value
         var rankInfo = _ranksByName[rank];
         var position = rankInfo.RankFunction(target);
-        var value = _storage.ReadAtRank(rankInfo.RankNumber, _rankCount, aggregation, position);
+        var value = _storage.ReadAtRank(_name, rankInfo.RankNumber, _rankCount, aggregation, position);
         
         if (value is null) return default;
 
@@ -383,7 +387,7 @@ public class TriangularList<TK, TV>
         // Read the value
         var rankInfo = _ranksByName[rank];
         var position = rankInfo.RankFunction(target);
-        var value = _storage.ReadAtRank(rankInfo.RankNumber, _rankCount, aggregation, position);
+        var value = _storage.ReadAtRank(_name, rankInfo.RankNumber, _rankCount, aggregation, position);
         
         if (value is null) return default;
 
@@ -416,7 +420,7 @@ public class TriangularList<TK, TV>
         var position = rankInfo.RankFunction(target);
         
         // Read the value
-        var value = _storage.ReadWithParentRank(rankInfo.RankNumber - 1, _rankCount, aggregation, position).ToList();
+        var value = _storage.ReadWithParentRank(_name, rankInfo.RankNumber - 1, _rankCount, aggregation, position).ToList();
         
         if (value.Count < 1) return Array.Empty<AggregateValue<TA, TK>>();
         
@@ -454,7 +458,7 @@ public class TriangularList<TK, TV>
         if (endPos < startPos) throw new Exception("Start position is after end position");
         
         // Read the value
-        var value = _storage.ReadWithRank(rankInfo.RankNumber, _rankCount, aggregation, startPos, endPos).ToList();
+        var value = _storage.ReadWithRank(_name, rankInfo.RankNumber, _rankCount, aggregation, startPos, endPos).ToList();
         
         if (value.Count < 1) return Array.Empty<TA>();
         
@@ -493,7 +497,7 @@ public class TriangularList<TK, TV>
         if (endPos < startPos) throw new Exception("Start position is after end position");
         
         // Read the value
-        var value = _storage.ReadWithRank(rankInfo.RankNumber, _rankCount, aggregation, startPos, endPos).ToList();
+        var value = _storage.ReadWithRank(_name, rankInfo.RankNumber, _rankCount, aggregation, startPos, endPos).ToList();
         
         if (value.Count < 1) return Array.Empty<AggregateValue<TA, TK>>();
         
@@ -528,7 +532,7 @@ public class TriangularList<TK, TV>
         // Read the various tables
         for (int rank = 0; rank <= _rankCount; rank++)
         {
-            _storage.DumpTableForRank(sb, rank, _rankCount);
+            _storage.DumpTableForRank(sb, _name, rank, _rankCount);
         }
         
         return sb.ToString();
@@ -542,20 +546,23 @@ public class TriangularList<TK, TV>
 /// <typeparam name="TV">Data type</typeparam>
 public class TriangularListBuilder<TK, TV>
 {
+    private readonly string _name;
+
     // Key stuff
     private string? _keyStorageType;
     private TriangularList<TK, TV>.KeyFunction? _keyFunction;
     private TriangularList<TK,TV>.KeyMinMaxFunction? _minMaxFunction;
     
     // Database
-    private ITableAdaptor? _storage;
+    private IAggregateTableAdaptor? _storage;
     
     // Ranks and aggregates
     private readonly Dictionary<int, TriangularList<TK, TV>.Rank> _ranksByNumber;
     private readonly Dictionary<string, TriangularList<TK, TV>.Aggregator> _aggregateByName;
 
-    public TriangularListBuilder()
+    public TriangularListBuilder(string name)
     {
+        _name = name;
         _aggregateByName = new Dictionary<string, TriangularList<TK, TV>.Aggregator>();
         _ranksByNumber = new Dictionary<int, TriangularList<TK, TV>.Rank>();
     }
@@ -563,7 +570,7 @@ public class TriangularListBuilder<TK, TV>
     /// <summary>
     /// Set the storage adaptor
     /// </summary>
-    public TriangularListBuilder<TK, TV> UsingStorage(ITableAdaptor storage)
+    public TriangularListBuilder<TK, TV> UsingStorage(IAggregateTableAdaptor storage)
     {
         _storage = storage;
         return this;
@@ -634,7 +641,7 @@ public class TriangularListBuilder<TK, TV>
         
         if (orderedRanks.Count < 1) throw new Exception("No ranks were supplied");
 
-        var result = new TriangularList<TK, TV>(_storage, _keyFunction, _minMaxFunction, _keyStorageType, orderedRanks, _aggregateByName);
+        var result = new TriangularList<TK, TV>(_name, _storage, _keyFunction, _minMaxFunction, _keyStorageType, orderedRanks, _aggregateByName);
 
         return result;
     }
