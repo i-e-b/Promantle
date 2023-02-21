@@ -15,71 +15,11 @@ namespace PromantleTests;
 [TestFixture, SingleThreaded]
 public class TriangularListTests : DbTestBase
 {
-    [Test] // low level test for big changes. Don't use the DB connection directly.
-    public void the_database_hooks_work()
-    {
-        ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
-
-        // Create table
-        var written = storage.EnsureTableForRank("hookTest", 1, 1, "INT", new BasicColumn("test", "int"));
-        Console.WriteLine($"Wrote DB: {written}");
-
-        // Write single value
-        storage.WriteAtRank("hookTest", 1, 1, "test", 1, 2, 3, 4, 15, 20);
-
-        // Read single value back
-        var value = storage.ReadAtRank("hookTest", 1, 1, "test", 2);
-        Assert.That(value?.ParentPosition, Is.EqualTo(1));
-        Assert.That(value?.Position, Is.EqualTo(2));
-        Assert.That(value?.Count, Is.EqualTo(3));
-        Assert.That(value?.Value, Is.EqualTo(4));
-        Assert.That(value?.LowerBound, Is.EqualTo(15));
-        Assert.That(value?.UpperBound, Is.EqualTo(20));
-
-        // More values
-        storage.WriteAtRank("hookTest", rank: 1, rankCount: 1, aggregateName: "test", parentPosition: 2, position: 3, count: 4, value: 5, lowerBound: 25, upperBound: 30);
-        storage.WriteAtRank("hookTest", 1, 1, "test", 2, 4, 5, 6, 35, 40);
-        storage.WriteAtRank("hookTest", 1, 1, "test", 2, 5, 6, 7, 45, 50);
-
-        // Read multiple values back
-        var values = storage.ReadWithRank("hookTest", 1, 1, "test", 2, 4).ToList();
-        Assert.That(values.Count, Is.EqualTo(3));
-
-        Assert.That(values[0].Value, Is.EqualTo(4));
-        Assert.That(values[0].Count, Is.EqualTo(3));
-        Assert.That(values[0].Position, Is.EqualTo(2));
-        Assert.That(values[0].LowerBound, Is.EqualTo(15));
-        Assert.That(values[0].UpperBound, Is.EqualTo(20));
-        Assert.That(values[0].ParentPosition, Is.EqualTo(1));
-
-        Assert.That(values[1].Value, Is.EqualTo(5));
-        Assert.That(values[1].Count, Is.EqualTo(4));
-        Assert.That(values[1].Position, Is.EqualTo(3));
-        Assert.That(values[1].LowerBound, Is.EqualTo(25));
-        Assert.That(values[1].UpperBound, Is.EqualTo(30));
-        Assert.That(values[1].ParentPosition, Is.EqualTo(2));
-
-        Assert.That(values[2].Value, Is.EqualTo(6));
-        Assert.That(values[2].Count, Is.EqualTo(5));
-        Assert.That(values[2].Position, Is.EqualTo(4));
-        Assert.That(values[2].LowerBound, Is.EqualTo(35));
-        Assert.That(values[2].UpperBound, Is.EqualTo(40));
-        Assert.That(values[2].ParentPosition, Is.EqualTo(2));
-
-        // Read back by parent
-        var parentValues = storage.ReadWithParentRank("hookTest", 1, 1, "test", 2).ToList();
-        Assert.That(parentValues.Count, Is.EqualTo(3));
-        Assert.That(parentValues[0].Value, Is.EqualTo(5));
-        Assert.That(parentValues[1].Value, Is.EqualTo(6));
-        Assert.That(parentValues[2].Value, Is.EqualTo(7));
-    }
-
     [Test]
     public void can_create_a_new_list_with_functions()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("test1")
@@ -97,7 +37,7 @@ public class TriangularListTests : DbTestBase
     public void can_write_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("scaleTest")
@@ -118,7 +58,7 @@ public class TriangularListTests : DbTestBase
     public void can_read_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("scaleTest")
@@ -146,7 +86,7 @@ public class TriangularListTests : DbTestBase
     public void can_read_a_range_over_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("rangeTest")
@@ -174,7 +114,7 @@ public class TriangularListTests : DbTestBase
     public void can_read_the_children_of_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("childOfValue")
@@ -208,7 +148,7 @@ public class TriangularListTests : DbTestBase
     public void can_read_a_range_over_multiple_scaled_values()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("rangeTest")
@@ -253,7 +193,7 @@ public class TriangularListTests : DbTestBase
     public void aggregated_data_can_be_read_with_count_and_source_key_range()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("countAndSourceKey")
@@ -295,7 +235,7 @@ public class TriangularListTests : DbTestBase
     public void can_handle_a_large_input_data_set()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
         var sw = new Stopwatch();
         sw.Restart();
 
@@ -353,7 +293,7 @@ public class TriangularListTests : DbTestBase
     public void can_aggregate_the_same_data_multiple_different_ways()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("multiAggregate")
@@ -418,7 +358,7 @@ public class TriangularListTests : DbTestBase
         // Connection 1
         {
             ResetDatabase();
-            var storage = new DatabaseConnection(SqlPort);
+            var storage = new TriangleListDatabaseConnection(SqlPort);
 
             var subject = TriangularList<DateTime, TestComplexType>
                 .Create("persistent")
@@ -448,7 +388,7 @@ public class TriangularListTests : DbTestBase
 
         // Connection 2
         {
-            var storage =new DatabaseConnection(SqlPort);
+            var storage =new TriangleListDatabaseConnection(SqlPort);
 
             // create a new list with same parameters as original
             var subject2 = TriangularList<DateTime, TestComplexType> // Must be EXACTLY same parameters
@@ -483,7 +423,7 @@ public class TriangularListTests : DbTestBase
         // loads of zero-values for unoccupied buckets.
         
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
         var sw = new Stopwatch();
         sw.Restart();
 
@@ -544,7 +484,7 @@ public class TriangularListTests : DbTestBase
     public void can_use_arbitrary_values_for_keys_and_ranks()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
         
         var subject = TriangularList<Geolocation, SaleWithLocation>
             .Create("GeoLocaleRanks")
@@ -587,7 +527,7 @@ public class TriangularListTests : DbTestBase
         var hr = 60.0;
 
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("persistent")
@@ -648,7 +588,7 @@ public class TriangularListTests : DbTestBase
         var hr = 60.0;
 
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("persistent")
@@ -714,7 +654,7 @@ public class TriangularListTests : DbTestBase
     public void can_migrate_one_triangular_list_to_another()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(SqlPort);
+        var storage = new TriangleListDatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("sourceList")
@@ -754,6 +694,161 @@ public class TriangularListTests : DbTestBase
         Assert.That(values[2].Count, Is.EqualTo(1));
     }
 
+
+    [Test]
+    public void triangle_list_backing_protects_against_accidental_sql_injection()
+    {
+        ResetDatabase();
+        var storage = new TriangleListDatabaseConnection(SqlPort);
+
+        var subject = TriangularList<DateTime, TestComplexType>
+            .Create("range;'Test")
+            .UsingStorage(storage)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
+            .Aggregate<decimal>("Spent;", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("Earned Stuff", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Rank(0, "Per--Hour", DateTimeHours)
+            .Build();
+
+        subject.WriteItem(new TestComplexType
+        {
+            EarnedAmount = 2.5m,
+            SpentAmount = 5.1m,
+            RecordedDate = new DateTime(2020, 5, 5, 10, 11, 12, DateTimeKind.Utc)
+        });
+
+        var values = subject.ReadAggregateDataOverRange<decimal>("Spent;", "Per--Hour", new DateTime(2020, 1, 1, 8, 30, 29), new DateTime(2021, 1, 1, 16, 45, 31)).ToList();
+
+        Assert.That(values.Count, Is.GreaterThan(0));
+        Assert.That(values[0], Is.EqualTo(5.1m));
+    }
+
+    [Test] // low level test for big changes. Don't use the DB connection directly.
+    public void the_database_hooks_work()
+    {
+        ResetDatabase();
+        var storage = new TriangleListDatabaseConnection(SqlPort);
+
+        // Create table
+        var written = storage.EnsureTableForRank("hookTest", 1, 1, "INT", new BasicColumn("test", "int"));
+        Console.WriteLine($"Wrote DB: {written}");
+
+        // Write single value
+        storage.WriteAtRank("hookTest", 1, 1, "test", 1, 2, 3, 4, 15, 20);
+
+        // Read single value back
+        var value = storage.ReadAtRank("hookTest", 1, 1, "test", 2);
+        Assert.That(value?.ParentPosition, Is.EqualTo(1));
+        Assert.That(value?.Position, Is.EqualTo(2));
+        Assert.That(value?.Count, Is.EqualTo(3));
+        Assert.That(value?.Value, Is.EqualTo(4));
+        Assert.That(value?.LowerBound, Is.EqualTo(15));
+        Assert.That(value?.UpperBound, Is.EqualTo(20));
+
+        // More values
+        storage.WriteAtRank("hookTest", rank: 1, rankCount: 1, aggregateName: "test", parentPosition: 2, position: 3, count: 4, value: 5, lowerBound: 25, upperBound: 30);
+        storage.WriteAtRank("hookTest", 1, 1, "test", 2, 4, 5, 6, 35, 40);
+        storage.WriteAtRank("hookTest", 1, 1, "test", 2, 5, 6, 7, 45, 50);
+
+        // Read multiple values back
+        var values = storage.ReadWithRank("hookTest", 1, 1, "test", 2, 4).ToList();
+        Assert.That(values.Count, Is.EqualTo(3));
+
+        Assert.That(values[0].Value, Is.EqualTo(4));
+        Assert.That(values[0].Count, Is.EqualTo(3));
+        Assert.That(values[0].Position, Is.EqualTo(2));
+        Assert.That(values[0].LowerBound, Is.EqualTo(15));
+        Assert.That(values[0].UpperBound, Is.EqualTo(20));
+        Assert.That(values[0].ParentPosition, Is.EqualTo(1));
+
+        Assert.That(values[1].Value, Is.EqualTo(5));
+        Assert.That(values[1].Count, Is.EqualTo(4));
+        Assert.That(values[1].Position, Is.EqualTo(3));
+        Assert.That(values[1].LowerBound, Is.EqualTo(25));
+        Assert.That(values[1].UpperBound, Is.EqualTo(30));
+        Assert.That(values[1].ParentPosition, Is.EqualTo(2));
+
+        Assert.That(values[2].Value, Is.EqualTo(6));
+        Assert.That(values[2].Count, Is.EqualTo(5));
+        Assert.That(values[2].Position, Is.EqualTo(4));
+        Assert.That(values[2].LowerBound, Is.EqualTo(35));
+        Assert.That(values[2].UpperBound, Is.EqualTo(40));
+        Assert.That(values[2].ParentPosition, Is.EqualTo(2));
+
+        // Read back by parent
+        var parentValues = storage.ReadWithParentRank("hookTest", 1, 1, "test", 2).ToList();
+        Assert.That(parentValues.Count, Is.EqualTo(3));
+        Assert.That(parentValues[0].Value, Is.EqualTo(5));
+        Assert.That(parentValues[1].Value, Is.EqualTo(6));
+        Assert.That(parentValues[2].Value, Is.EqualTo(7));
+    }
+    
+    [Test] // low level test for big changes. Don't use the DB connection directly.
+    public void the_database_hooks_protect_against_basic_injection()
+    {
+        ResetDatabase();
+        var storage = new TriangleListDatabaseConnection(SqlPort);
+
+        // Bad types will get rejected as unknown -- we convert 'INT; DROP x; --' into 'int_dropx___'
+        Assert.Throws<PostgresException>(() => { 
+            storage.EnsureTableForRank("hooktest", 1, 1, "INT; DROP x; --", new BasicColumn("test; error; --", "int; 1=1; --"));
+        });
+        
+        // Create table
+        var written = storage.EnsureTableForRank("hook; 1=1; 'Test", 1, 1, "INT", new BasicColumn("test; error; --", "int"));
+        Console.WriteLine($"Wrote DB: {written}");
+
+        // Write single value
+        storage.WriteAtRank("hook; 1=1; 'Test", 1, 1, "test; error; --", 1, 2, 3, 4, 15, 20);
+
+        // Read single value back
+        var value = storage.ReadAtRank("hook; 1=1; 'Test", 1, 1, "test; error; --", 2);
+        Assert.That(value?.ParentPosition, Is.EqualTo(1));
+        Assert.That(value?.Position, Is.EqualTo(2));
+        Assert.That(value?.Count, Is.EqualTo(3));
+        Assert.That(value?.Value, Is.EqualTo(4));
+        Assert.That(value?.LowerBound, Is.EqualTo(15));
+        Assert.That(value?.UpperBound, Is.EqualTo(20));
+
+        // More values
+        storage.WriteAtRank("hook; 1=1; 'Test", rank: 1, rankCount: 1, aggregateName: "test; error; --", parentPosition: 2, position: 3, count: 4, value: 5, lowerBound: 25, upperBound: 30);
+        storage.WriteAtRank("hook; 1=1; 'Test", 1, 1, "test; error; --", 2, 4, 5, 6, 35, 40);
+        storage.WriteAtRank("hook; 1=1; 'Test", 1, 1, "test; error; --", 2, 5, 6, 7, 45, 50);
+
+        // Read multiple values back
+        var values = storage.ReadWithRank("hook; 1=1; 'Test", 1, 1, "test; error; --", 2, 4).ToList();
+        Assert.That(values.Count, Is.EqualTo(3));
+
+        Assert.That(values[0].Value, Is.EqualTo(4));
+        Assert.That(values[0].Count, Is.EqualTo(3));
+        Assert.That(values[0].Position, Is.EqualTo(2));
+        Assert.That(values[0].LowerBound, Is.EqualTo(15));
+        Assert.That(values[0].UpperBound, Is.EqualTo(20));
+        Assert.That(values[0].ParentPosition, Is.EqualTo(1));
+
+        Assert.That(values[1].Value, Is.EqualTo(5));
+        Assert.That(values[1].Count, Is.EqualTo(4));
+        Assert.That(values[1].Position, Is.EqualTo(3));
+        Assert.That(values[1].LowerBound, Is.EqualTo(25));
+        Assert.That(values[1].UpperBound, Is.EqualTo(30));
+        Assert.That(values[1].ParentPosition, Is.EqualTo(2));
+
+        Assert.That(values[2].Value, Is.EqualTo(6));
+        Assert.That(values[2].Count, Is.EqualTo(5));
+        Assert.That(values[2].Position, Is.EqualTo(4));
+        Assert.That(values[2].LowerBound, Is.EqualTo(35));
+        Assert.That(values[2].UpperBound, Is.EqualTo(40));
+        Assert.That(values[2].ParentPosition, Is.EqualTo(2));
+
+        // Read back by parent
+        var parentValues = storage.ReadWithParentRank("hook; 1=1; 'Test", 1, 1, "test; error; --", 2).ToList();
+        Assert.That(parentValues.Count, Is.EqualTo(3));
+        Assert.That(parentValues[0].Value, Is.EqualTo(5));
+        Assert.That(parentValues[1].Value, Is.EqualTo(6));
+        Assert.That(parentValues[2].Value, Is.EqualTo(7));
+    }
+
+    
     #region Test helpers
     private static int SqlPort=> InMemCockroachDb.LastValidSqlPort;
     

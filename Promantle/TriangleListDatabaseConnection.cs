@@ -8,10 +8,35 @@ using Npgsql;
 namespace Promantle;
 
 /// <summary>
+/// A helper to reduce the risk of sql injection
+/// while allowing dynamic table and query generation.
+/// </summary>
+public static class DatabaseName {
+    /// <summary>
+    /// Convert a string into a viable name for a SQL table or column.
+    /// Allows [0-9A-Za-z_]. Anything else is converted to '_'.
+    /// Preserves case.
+    /// </summary>
+    public static string Safe(string source)
+    {
+        var sb = new StringBuilder(source.Length);
+        foreach (var c in source)
+        {
+            if (c == ' ') continue; // skip spaces
+            if (c >= 'a' && c <= 'z') sb.Append(c);
+            else if (c >= 'A' && c <= 'Z') sb.Append(c);
+            else if (c >= '0' && c <= '9') sb.Append(c);
+            else sb.Append('_');
+        }
+        return sb.ToString();
+    }
+}
+
+/// <summary>
 /// Really dumb database adaptor for testing.
 /// You'd probably want to replace this in a real application.
 /// </summary>
-public class DatabaseConnection : IAggregateTableAdaptor, IMultiPageTableAdaptor
+public class TriangleListDatabaseConnection : IAggregateTableAdaptor
 {
 #if UseCockroach
     public const string SchemaName = "triangles"; // separate schema for triangular data
@@ -116,7 +141,7 @@ SELECT EXISTS (
     
     #region Aggregates
 
-    public DatabaseConnection(int port)
+    public TriangleListDatabaseConnection(int port)
     {
 #if UseCockroach
         // CRDB:
@@ -128,14 +153,15 @@ SELECT EXISTS (
         
         Console.WriteLine($"Connection: str='{ConnectionString}'");
     }
+    
     public IEnumerable<AggregateValue> ReadWithRank(string groupName, int rank, int rankCount, string aggregateName, long start, long end)
     {
         // See `EnsureTableForRank` for table definition
 
-        // TODO: protect aggregateName from injection
-        var synthName = SynthName(groupName, rank, rankCount);
-        return SimpleSelectMany<AggregateValue>(
-            $"SELECT position, parentPosition, COALESCE({aggregateName}{CountPostfix},0), {aggregateName}{ValuePostfix}, lowerBound,  upperBound" +
+        var synthName = DatabaseName.Safe(SynthName(groupName, rank, rankCount));
+        var safeName = DatabaseName.Safe(aggregateName);
+        return SimpleSelectMany(
+            $"SELECT position, parentPosition, COALESCE({safeName}{CountPostfix},0), {safeName}{ValuePostfix}, lowerBound,  upperBound" +
             $" FROM {SchemaName}.{synthName}" +
             "  WHERE position BETWEEN :start AND :end;",
             new {start, end},
@@ -146,10 +172,10 @@ SELECT EXISTS (
     {
         // See `EnsureTableForRank` for table definition
         
-        // TODO: protect aggregateName from injection
-        var synthName = SynthName(groupName, rank, rankCount);
-        return SimpleSelectMany<AggregateValue>(
-            $"SELECT position, parentPosition, COALESCE({aggregateName}{CountPostfix},0), {aggregateName}{ValuePostfix}, lowerBound,  upperBound" +
+        var synthName = DatabaseName.Safe(SynthName(groupName, rank, rankCount));
+        var safeName = DatabaseName.Safe(aggregateName);
+        return SimpleSelectMany(
+            $"SELECT position, parentPosition, COALESCE({safeName}{CountPostfix},0), {safeName}{ValuePostfix}, lowerBound,  upperBound" +
             $" FROM {SchemaName}.{synthName}" +
             "  WHERE parentPosition = :parentPosition;",
             new {parentPosition},
@@ -160,10 +186,10 @@ SELECT EXISTS (
     {
         // See `EnsureTableForRank` for table definition
         
-        // TODO: protect aggregateName from injection
-        var synthName = SynthName(groupName, rank, rankCount);
-        return SimpleSelectMany<AggregateValue>(
-                $"SELECT position, parentPosition, {aggregateName}{CountPostfix}, {aggregateName}{ValuePostfix}, lowerBound,  upperBound" +
+        var synthName = DatabaseName.Safe(SynthName(groupName, rank, rankCount));
+        var safeName = DatabaseName.Safe(aggregateName);
+        return SimpleSelectMany(
+                $"SELECT position, parentPosition, {safeName}{CountPostfix}, {safeName}{ValuePostfix}, lowerBound,  upperBound" +
                 $" FROM {SchemaName}.{synthName}" +
                 "  WHERE position = :position" +
                 "  LIMIT 1;",
@@ -186,9 +212,9 @@ SELECT EXISTS (
         object? value, object? lowerBound, object? upperBound)
     {
         // See `EnsureTableForRank` for table definition
-        var synthName = SynthName(groupName, rank, rankCount);
-        var countCol = $"{aggregateName}{CountPostfix}";
-        var valueCol = $"{aggregateName}{ValuePostfix}";
+        var synthName = DatabaseName.Safe(SynthName(groupName, rank, rankCount));
+        var countCol = DatabaseName.Safe($"{aggregateName}{CountPostfix}");
+        var valueCol = DatabaseName.Safe($"{aggregateName}{ValuePostfix}");
 
         SimpleExecute($"INSERT INTO {SchemaName}.{synthName}" +
                       $"       ( position, parentPosition,  lowerBound,  upperBound,  {countCol}, {valueCol})" +
@@ -203,7 +229,7 @@ SELECT EXISTS (
     {
         try
         {
-            var synthName = SynthName(groupName, rank, rankCount);
+            var synthName = DatabaseName.Safe(SynthName(groupName, rank, rankCount));
             return SimpleSelect($"SELECT MAX(position) FROM {SchemaName}.{synthName};", new { }) as long? ?? 0;
         }
         catch
@@ -214,7 +240,7 @@ SELECT EXISTS (
 
     public void DumpTableForRank(StringBuilder sb, string groupName, int rank, int rankCount)
     {
-        var synthName = SynthName(groupName, rank, rankCount);
+        var synthName = DatabaseName.Safe(SynthName(groupName, rank, rankCount));
         
         sb.AppendLine();
         sb.AppendLine(synthName);
@@ -225,7 +251,7 @@ SELECT EXISTS (
 
     public IEnumerable<IDictionary<string, object?>> SelectEntireTableAtRank(string groupName, int rank, int rankCount)
     {
-        var synthName = SynthName(groupName, rank, rankCount);
+        var synthName = DatabaseName.Safe(SynthName(groupName, rank, rankCount));
         
         return SimpleSelectMany($"SELECT * FROM {SchemaName}.{synthName};", null, ReaderRowToDictionary);
     }
@@ -243,14 +269,15 @@ SELECT EXISTS (
 
     public void DeleteTableForRank(string groupName, int rank, int rankCount)
     {
-        var synthName = SynthName(groupName, rank, rankCount);
+        var synthName = DatabaseName.Safe(SynthName(groupName, rank, rankCount));
         
         SimpleExecute($"DROP TABLE {SchemaName}.{synthName};", null);
     }
 
     public string GetValueColumnName(string aggregateName)
     {
-        return $"{aggregateName}{ValuePostfix}".ToLowerInvariant();
+        var safeName = DatabaseName.Safe(aggregateName);
+        return $"{safeName}{ValuePostfix}".ToLowerInvariant();
     }
 
     private int ReaderRowToString(StringBuilder sb, IDataRecord rdr)
@@ -266,7 +293,8 @@ SELECT EXISTS (
 
     public bool EnsureTableForRank(string groupName, int rank, int rankCount, string keyType, params BasicColumn[] aggregates)
     {
-        var synthName = SynthName(groupName, rank, rankCount);
+        var synthName = DatabaseName.Safe(SynthName(groupName, rank, rankCount));
+        var safeKeyType = DatabaseName.Safe(keyType);
         
         if (TableExists(SchemaName, synthName)) return false; // already exists
 
@@ -281,16 +309,20 @@ SELECT EXISTS (
         sb.AppendLine(",   parentPosition INT8"); // position in the next (more aggregated) rank
         
         // Upper and lower bounds of the key values that are aggregated at this point
-        sb.AppendLine($",   lowerBound {keyType}"); // lowest of key values in values aggregated here
-        sb.AppendLine($",   upperBound {keyType}"); // highest of key values aggregated here
+        sb.AppendLine($",   lowerBound {safeKeyType}"); // lowest of key values in values aggregated here
+        sb.AppendLine($",   upperBound {safeKeyType}"); // highest of key values aggregated here
         
 
         foreach (var agg in aggregates)
         {
             if (agg is null) throw new Exception("Invalid aggregation (null value in aggregates)");
             if (string.IsNullOrWhiteSpace(agg.Name) || string.IsNullOrWhiteSpace(agg.Type)) throw new Exception($"Invalid aggregate: '{agg.Name ?? "<null>"}' has type '{agg.Type ?? "<null>"}'");
-            sb.AppendLine($",   {agg.Name}{CountPostfix} INT8");       // count of values that are summed here
-            sb.AppendLine($",   {agg.Name}{ValuePostfix} {agg.Type}"); // the summed value
+            
+            var safeAggName = DatabaseName.Safe(agg.Name);
+            var safeAggType = DatabaseName.Safe(agg.Type);
+            
+            sb.AppendLine($",   {safeAggName}{CountPostfix} INT8");       // count of values that are summed here
+            sb.AppendLine($",   {safeAggName}{ValuePostfix} {safeAggType}"); // the summed value
         }
         
 #if UseCockroach
@@ -316,37 +348,16 @@ SELECT EXISTS (
     /// <summary> For testing. Should NOT be added to the interface. </summary>
     public bool TableExistsForRank(string groupName, int rank, int rankCount)
     {
-        var synthName = SynthName(groupName, rank, rankCount);
+        var synthName = DatabaseName.Safe(SynthName(groupName, rank, rankCount));
         return TableExists(SchemaName, synthName);
     }
 
     
     private string SynthName(string baseName, int rank, int rankCount)
     {
-        var synthName = $"{baseName}_{rank}_of_{rankCount}";
+        var synthName = $"{DatabaseName.Safe(baseName)}_{rank}_of_{rankCount}";
         return synthName;
     }
     
     #endregion
-    
-    #region MultiPaging
-
-    public bool EnsurePagedTable(string baseName, List<BasicColumn> dbColumns)
-    {
-        var synthName = $"{baseName}_multiPage";
-        
-        if (TableExists(SchemaName, synthName)) return false; // already exists
-        
-        var sb = new StringBuilder();
-        
-        sb.Append($"CREATE TABLE {SchemaName}.{synthName}");
-        sb.AppendLine("(");
-        
-        // IEB: TODO: Finish table def
-        
-        return true;
-    }
-
-    #endregion
-
 }

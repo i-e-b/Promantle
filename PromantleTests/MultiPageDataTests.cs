@@ -18,7 +18,7 @@ public class MultiPageDataTests : DbTestBase
     public void can_create_a_multi_pager_with_a_type_and_page_size()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new MultiPageTableAdaptor();
 
         var subject = new MultiPager<TestPagedType>("pagerTest1", storage, pageSize: 10);
 
