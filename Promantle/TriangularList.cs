@@ -71,11 +71,14 @@ public class TriangularList<TK, TV>
     private readonly IAggregateTableAdaptor _storage;
     private readonly KeyFunction _keyFunction;
     private readonly KeyMinMaxFunction _minMaxFunction;
-    private readonly string _keyStorageType;
     private readonly Dictionary<string, Aggregator> _aggregateByName;
     private readonly Dictionary<string, Rank> _ranksByName;
     private readonly Dictionary<int, Rank> _ranksByNumber;
     private readonly int _rankCount;
+    
+    /// <summary>Set to true when <see cref="DeleteAllTablesAndData"/> is called. This causes method calls to fail.</summary>
+    private bool _deleted;
+    private const string DeletedMessage = "This instance has been deleted. Create a new instance before calling.";
     
     /// <summary> Unique ID for rank-zero values </summary>
     private long _nextZero;
@@ -105,6 +108,9 @@ public class TriangularList<TK, TV>
     /// <summary>
     /// Represents a line of data that is aggregated from the stored items
     /// </summary>
+    [SuppressMessage("ReSharper", "MemberCanBeProtected.Global")]
+    [SuppressMessage("ReSharper", "NotAccessedField.Global")]
+    [SuppressMessage("ReSharper", "UnusedMember.Global")]
     public abstract class Aggregator
     {
         /// <summary>
@@ -206,13 +212,13 @@ public class TriangularList<TK, TV>
         List<Rank> orderedRanks,
         Dictionary<string, Aggregator> aggregateByName)
     {
+        _deleted = true;
         if (orderedRanks.Count < 1) throw new Exception("Triangular list must have at least one rank");
 
         _name = name;
         _storage = storage;
         _keyFunction = keyFunction;
         _minMaxFunction = minMaxFunction;
-        _keyStorageType = keyStorageType;
 
         // Build dictionaries from the list
         // We use our own rank numbers, user can query only by name.
@@ -241,10 +247,11 @@ public class TriangularList<TK, TV>
         _rankCount = _ranksByNumber.Count;
         for (int rank = 0; rank <= _rankCount; rank++)
         {
-            _storage.EnsureTableForRank(_name, rank, _rankCount, _keyStorageType, aggregateNames);
+            _storage.EnsureTableForRank(_name, rank, _rankCount, keyStorageType, aggregateNames);
         }
         
         _nextZero = _storage.MaxPosition(_name, 0, _rankCount) + 1;
+        _deleted = false;
     }
 
     /// <summary>
@@ -254,6 +261,7 @@ public class TriangularList<TK, TV>
     /// <returns>Number of calculations made</returns>
     public int WriteItem(TV item)
     {
+        if (_deleted) throw new Exception(DeletedMessage);
         var calcCount = 0;
         
         // Get the key out of the value
@@ -301,6 +309,7 @@ public class TriangularList<TK, TV>
     /// </summary>
     private void GetKeyRange(List<AggregateValue> children, out object? lower, out object? upper)
     {
+        if (_deleted) throw new Exception(DeletedMessage);
         // this guess *should* be correct
         TK? lowest = NullCast<TK>(children[0].LowerBound);
         TK? highest = NullCast<TK>(children[^1].UpperBound);
@@ -352,6 +361,7 @@ public class TriangularList<TK, TV>
     /// <typeparam name="TA">Type of the data to be returned</typeparam>
     public TA? ReadAggregateDataAtPoint<TA>(string aggregation, string rank, TK target)
     {
+        if (_deleted) throw new Exception(DeletedMessage);
         if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
         if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
 
@@ -381,6 +391,7 @@ public class TriangularList<TK, TV>
     /// <returns>A single aggregate value that includes the source value range and count</returns>
     public AggregateValue<TA, TK>? ReadDataAtPoint<TA>(string aggregation, string rank, TK target)
     {
+        if (_deleted) throw new Exception(DeletedMessage);
         if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
         if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
 
@@ -409,9 +420,7 @@ public class TriangularList<TK, TV>
     /// <returns>Multiple aggregate values that include the source value range and count at each point</returns>
     public IEnumerable<AggregateValue<TA, TK>> ReadDataUnderPoint<TA>(string aggregation, string rank, TK target)
     {
-        if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
-        if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
-
+        if (_deleted) throw new Exception(DeletedMessage);
         if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
         if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
 
@@ -445,9 +454,7 @@ public class TriangularList<TK, TV>
     /// <typeparam name="TA">Type of the data to be returned</typeparam>
     public IEnumerable<TA> ReadAggregateDataOverRange<TA>(string aggregation, string rank, TK start, TK end)
     {
-        if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
-        if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
-
+        if (_deleted) throw new Exception(DeletedMessage);
         if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
         if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
 
@@ -484,9 +491,7 @@ public class TriangularList<TK, TV>
     /// <returns>Multiple aggregate values that include the source value range and count at each point</returns>
     public IEnumerable<AggregateValue<TA, TK>> ReadDataOverRange<TA>(string aggregation, string rank, TK start, TK end)
     {
-        if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
-        if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
-
+        if (_deleted) throw new Exception(DeletedMessage);
         if (!_aggregateByName.ContainsKey(aggregation)) throw new Exception($"No aggregation '{aggregation}' is registered");
         if (!_ranksByName.ContainsKey(rank)) throw new Exception($"No scale rank '{rank}' is registered");
 
@@ -527,6 +532,7 @@ public class TriangularList<TK, TV>
     /// </summary>
     public string DumpTables()
     {
+        if (_deleted) throw new Exception(DeletedMessage);
         var sb = new StringBuilder(10_000);
         
         // Read the various tables
@@ -536,6 +542,24 @@ public class TriangularList<TK, TV>
         }
         
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Drop all tables related to this triangular list.
+    /// This will delete all data, and will render this instance useless.
+    /// <p></p>
+    /// The same triangular list can be created again after deleting, but it will be empty
+    /// </summary>
+    public void DeleteAllTablesAndData()
+    {
+        if (_deleted) throw new Exception(DeletedMessage);
+        
+        _deleted = true;
+        
+        for (int rank = 0; rank <= _rankCount; rank++)
+        {
+            _storage.DeleteTableForRank(_name, rank, _rankCount);
+        }
     }
 }
 

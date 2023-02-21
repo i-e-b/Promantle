@@ -218,9 +218,16 @@ SELECT EXISTS (
         
         sb.AppendLine();
         sb.AppendLine(synthName);
-        SimpleSelectMany($"SELECT * FROM {SchemaName}.{synthName};", new{}, rdr => ReaderRowToString(sb, rdr));
+        SimpleSelectMany($"SELECT * FROM {SchemaName}.{synthName};", null, rdr => ReaderRowToString(sb, rdr));
         
         sb.AppendLine();
+    }
+
+    public void DeleteTableForRank(string groupName, int rank, int rankCount)
+    {
+        var synthName = SynthName(groupName, rank, rankCount);
+        
+        SimpleExecute($"DROP TABLE {SchemaName}.{synthName};", null);
     }
 
     private int ReaderRowToString(StringBuilder sb, IDataRecord rdr)
@@ -282,6 +289,15 @@ SELECT EXISTS (
         return true;
     }
 
+    
+    /// <summary> For testing. Should NOT be added to the interface. </summary>
+    public bool TableExistsForRank(string groupName, int rank, int rankCount)
+    {
+        var synthName = SynthName(groupName, rank, rankCount);
+        return TableExists(SchemaName, synthName);
+    }
+
+    
     private string SynthName(string baseName, int rank, int rankCount)
     {
         var synthName = $"{baseName}_{rank}_of_{rankCount}";

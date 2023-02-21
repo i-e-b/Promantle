@@ -55,4 +55,9 @@ public interface IAggregateTableAdaptor
     /// Diagnostics. Write table info to the supplied StringBuilder
     /// </summary>
     void DumpTableForRank(StringBuilder sb, string groupName, int rank, int rankCount);
+
+    /// <summary>
+    /// Delete the table for a given name and rank.
+    /// </summary>
+    void DeleteTableForRank(string name, int rank, int rankCount);
 }

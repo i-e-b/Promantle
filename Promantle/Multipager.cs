@@ -46,17 +46,30 @@ public class MultiPager<T>
             if (recurse) throw new Exception($"Failed to find underlying type of enum {type.Name}");
             return GuessSqlType(Enum.GetUnderlyingType(type), true);
         }
+        
+        // See Postgres docs: https://www.postgresql.org/docs/current/datatype.html
 
+        #region Numeric
         if (type == typeof(int)) return "INT";
         if (type == typeof(int?)) return "INT";
-        if (type == typeof(long)) return "INT";
-        if (type == typeof(long?)) return "INT";
-        if (type == typeof(double)) return "DECIMAL";
-        if (type == typeof(double?)) return "DECIMAL";
+        if (type == typeof(long)) return "INT8";
+        if (type == typeof(long?)) return "INT8";
+        if (type == typeof(double)) return "FLOAT8";
+        if (type == typeof(double?)) return "FLOAT8";
         if (type == typeof(decimal)) return "DECIMAL";
         if (type == typeof(decimal?)) return "DECIMAL";
+        #endregion
         
         if (type == typeof(string)) return "TEXT";
+        if (type == typeof(bool?)) return "BOOLEAN";
+        if (type == typeof(bool)) return "BOOLEAN";
+        
+        if (type == typeof(DateTime)) return "TIMESTAMP";
+        if (type == typeof(DateTime?)) return "TIMESTAMP";
+        if (type == typeof(TimeSpan)) return "INTERVAL";
+        if (type == typeof(TimeSpan?)) return "INTERVAL";
+        
+        // TODO: Could fall back to JSON type (and serialise this side) for arbitrary types
         
         throw new Exception($"No SQL type known for C# type {type.Name}");
     }

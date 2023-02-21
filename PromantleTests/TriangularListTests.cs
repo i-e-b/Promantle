@@ -15,11 +15,11 @@ namespace PromantleTests;
 [TestFixture, SingleThreaded]
 public class TriangularListTests : DbTestBase
 {
-    [Test]
+    [Test] // low level test for big changes. Don't use the DB connection directly.
     public void the_database_hooks_work()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
 
         // Create table
         var written = storage.EnsureTableForRank("hookTest", 1, 1, "INT", new BasicColumn("test", "int"));
@@ -79,7 +79,7 @@ public class TriangularListTests : DbTestBase
     public void can_create_a_new_list_with_functions()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("test1")
@@ -97,7 +97,7 @@ public class TriangularListTests : DbTestBase
     public void can_write_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("scaleTest")
@@ -118,7 +118,7 @@ public class TriangularListTests : DbTestBase
     public void can_read_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("scaleTest")
@@ -146,7 +146,7 @@ public class TriangularListTests : DbTestBase
     public void can_read_a_range_over_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("rangeTest")
@@ -174,7 +174,7 @@ public class TriangularListTests : DbTestBase
     public void can_read_the_children_of_a_single_scaled_value()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("childOfValue")
@@ -208,7 +208,7 @@ public class TriangularListTests : DbTestBase
     public void can_read_a_range_over_multiple_scaled_values()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("rangeTest")
@@ -253,7 +253,7 @@ public class TriangularListTests : DbTestBase
     public void aggregated_data_can_be_read_with_count_and_source_key_range()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("countAndSourceKey")
@@ -289,13 +289,13 @@ public class TriangularListTests : DbTestBase
     }
 
     [Test, Explicit("Large data set. Takes a while on Postgres, and ages in CRDB")]
-    // Using Cockroach, this takes about 6 minutes on Window. For some reason, it takes *hours* on my Linux machine (which has a slower CPU).
+    // Using Cockroach, this takes about 6 minutes on Windows. For some reason, it takes *hours* on my Linux machine (which has a slower CPU).
     // On Windows, Postgres is about 7x faster than Crdb (Psql=400 op/s; Crdb=55 op/s)
     // On Linux, Postgres takes about a minute (Psql=300 op/s; Crdb=???)
     public void can_handle_a_large_input_data_set()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
         var sw = new Stopwatch();
         sw.Restart();
 
@@ -353,7 +353,7 @@ public class TriangularListTests : DbTestBase
     public void can_aggregate_the_same_data_multiple_different_ways()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
 
         var subject = TriangularList<DateTime, TestComplexType>
             .Create("multiAggregate")
@@ -418,7 +418,7 @@ public class TriangularListTests : DbTestBase
         // Connection 1
         {
             ResetDatabase();
-            var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+            var storage = new DatabaseConnection(SqlPort);
 
             var subject = TriangularList<DateTime, TestComplexType>
                 .Create("persistent")
@@ -448,7 +448,7 @@ public class TriangularListTests : DbTestBase
 
         // Connection 2
         {
-            var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+            var storage =new DatabaseConnection(SqlPort);
 
             // create a new list with same parameters as original
             var subject2 = TriangularList<DateTime, TestComplexType> // Must be EXACTLY same parameters
@@ -483,7 +483,7 @@ public class TriangularListTests : DbTestBase
         // loads of zero-values for unoccupied buckets.
         
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
         var sw = new Stopwatch();
         sw.Restart();
 
@@ -544,7 +544,7 @@ public class TriangularListTests : DbTestBase
     public void can_use_arbitrary_values_for_keys_and_ranks()
     {
         ResetDatabase();
-        var storage = new DatabaseConnection(InMemCockroachDb.LastValidSqlPort);
+        var storage = new DatabaseConnection(SqlPort);
         
         var subject = TriangularList<Geolocation, SaleWithLocation>
             .Create("GeoLocaleRanks")
@@ -580,8 +580,139 @@ public class TriangularListTests : DbTestBase
         Assert.That(profit, Is.EqualTo(44.0m));
     }
 
+    [Test]
+    public void triangular_list_can_be_deleted_from_database()
+    {
+        var baseDate = new DateTime(2020, 5, 5, 0, 0, 0, DateTimeKind.Utc);
+        var hr = 60.0;
 
+        ResetDatabase();
+        var storage = new DatabaseConnection(SqlPort);
 
+        var subject = TriangularList<DateTime, TestComplexType>
+            .Create("persistent")
+            .UsingStorage(storage)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
+            .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Rank(1, "PerMinute", DateTimeMinutes)
+            .Rank(2, "PerHour", DateTimeHours)
+            .Rank(3, "PerDay", DateTimeDays)
+            .Rank(4, "PerWeek", DateTimeWeeks)
+            .Build();
+
+        subject.WriteItem(new TestComplexType(baseDate, .5, 1.01m, 2.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 10, 2.01m, 4.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 20.5, 3.01m, 6.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 40, 4.01m, 4.50m));
+        subject.WriteItem(new TestComplexType(baseDate, hr, 5.01m, 2.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 1 * hr + 30, 4.01m, 4.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 2 * hr + 15, 3.01m, 6.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 3 * hr + 30, 2.01m, 4.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 4 * hr + 45, 1.01m, 2.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 5 * hr + .05, 2.01m, 4.50m));
+        
+        // Tables should all be present
+        Assert.IsTrue(storage.TableExistsForRank("persistent", 0, 4), "0 of 4");
+        Assert.IsTrue(storage.TableExistsForRank("persistent", 1, 4), "1 of 4");
+        Assert.IsTrue(storage.TableExistsForRank("persistent", 2, 4), "2 of 4");
+        Assert.IsTrue(storage.TableExistsForRank("persistent", 3, 4), "3 of 4");
+        Assert.IsTrue(storage.TableExistsForRank("persistent", 4, 4), "4 of 4");
+
+        // Delete
+        subject.DeleteAllTablesAndData();
+        
+        // All tables should be gone
+        Assert.IsFalse(storage.TableExistsForRank("persistent", 0, 4), "0 of 4");
+        Assert.IsFalse(storage.TableExistsForRank("persistent", 1, 4), "1 of 4");
+        Assert.IsFalse(storage.TableExistsForRank("persistent", 2, 4), "2 of 4");
+        Assert.IsFalse(storage.TableExistsForRank("persistent", 3, 4), "3 of 4");
+        Assert.IsFalse(storage.TableExistsForRank("persistent", 4, 4), "4 of 4");
+        
+        // Calls on old instance should fail
+        Assert.Throws<Exception>(()=>subject.DumpTables());
+        Assert.Throws<Exception>(()=>subject.ReadAggregateDataOverRange<decimal>("Spent", "PerHour", new DateTime(2020, 1, 1, 8, 30, 29), new DateTime(2021, 1, 1, 16, 45, 31)));
+        Assert.Throws<Exception>(()=>subject.WriteItem(new TestComplexType(baseDate, .5, 1.01m, 2.50m)));
+        Assert.Throws<Exception>(()=>subject.ReadDataUnderPoint<decimal>("Spent", "PerHour", new DateTime(2020, 5, 5, 10, 0, 0, DateTimeKind.Utc)));
+        Assert.Throws<Exception>(()=>subject.ReadDataOverRange<decimal>("Spent", "PerWeek", new DateTime(2023, 1, 1, 0, 0, 0), new DateTime(2024, 1, 1, 0, 0, 0)));
+        Assert.Throws<Exception>(()=>subject.ReadAggregateDataAtPoint<decimal>("Spent", "PerHour", new DateTime(2020, 5, 5, 10, 10, 32)));
+        
+        // Should not delete twice on one instance
+        Assert.Throws<Exception>(()=>subject.DeleteAllTablesAndData());
+    }
+
+    [Test]
+    public void deleted_triangular_lists_can_be_recreated()
+    {
+        var baseDate = new DateTime(2020, 5, 5, 0, 0, 0, DateTimeKind.Utc);
+        var hr = 60.0;
+
+        ResetDatabase();
+        var storage = new DatabaseConnection(SqlPort);
+
+        var subject = TriangularList<DateTime, TestComplexType>
+            .Create("persistent")
+            .UsingStorage(storage)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
+            .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Rank(1, "PerMinute", DateTimeMinutes)
+            .Rank(2, "PerHour", DateTimeHours)
+            .Rank(3, "PerDay", DateTimeDays)
+            .Rank(4, "PerWeek", DateTimeWeeks)
+            .Build();
+
+        subject.WriteItem(new TestComplexType(baseDate, .5, 1.01m, 2.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 10, 2.01m, 4.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 20.5, 3.01m, 6.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 40, 4.01m, 4.50m));
+        subject.WriteItem(new TestComplexType(baseDate, hr, 5.01m, 2.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 1 * hr + 30, 4.01m, 4.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 2 * hr + 15, 3.01m, 6.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 3 * hr + 30, 2.01m, 4.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 4 * hr + 45, 1.01m, 2.50m));
+        subject.WriteItem(new TestComplexType(baseDate, 5 * hr + .05, 2.01m, 4.50m));
+
+        // Delete
+        subject.DeleteAllTablesAndData();
+        
+        // make a new version
+        var subject2 = TriangularList<DateTime, TestComplexType>
+            .Create("persistent")
+            .UsingStorage(storage)
+            .KeyOn("TIMESTAMP", DateFromTestComplexType, DateMinMax)
+            .Aggregate<decimal>("Spent", SpentFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Aggregate<decimal>("Earned", EarnedFromTestComplexType, DecimalSumAggregate, "DECIMAL")
+            .Rank(1, "PerMinute", DateTimeMinutes)
+            .Rank(2, "PerHour", DateTimeHours)
+            .Rank(3, "PerDay", DateTimeDays)
+            .Rank(4, "PerWeek", DateTimeWeeks)
+            .Build();
+        
+        // should be able to write and read on new instance
+        subject2.WriteItem(new TestComplexType(baseDate, .5, 1.01m, 2.50m));
+        subject2.WriteItem(new TestComplexType(baseDate, 10, 2.01m, 4.50m));
+        subject2.WriteItem(new TestComplexType(baseDate, 20.5, 3.01m, 6.50m));
+        subject2.WriteItem(new TestComplexType(baseDate, 40, 4.01m, 4.50m));
+        subject2.WriteItem(new TestComplexType(baseDate, hr, 5.01m, 2.50m));
+        subject2.WriteItem(new TestComplexType(baseDate, 1 * hr + 30, 4.01m, 4.50m));
+        subject2.WriteItem(new TestComplexType(baseDate, 2 * hr + 15, 3.01m, 6.50m));
+        subject2.WriteItem(new TestComplexType(baseDate, 3 * hr + 30, 2.01m, 4.50m));
+        subject2.WriteItem(new TestComplexType(baseDate, 4 * hr + 45, 1.01m, 2.50m));
+        subject2.WriteItem(new TestComplexType(baseDate, 5 * hr + .05, 2.01m, 4.50m));
+        subject2.WriteItem(new TestComplexType(baseDate, 5 * hr + .10, 2.01m, 4.50m));
+        subject2.WriteItem(new TestComplexType(baseDate, 5 * hr + .15, 2.01m, 4.50m));
+
+        // Query from data
+        var values = subject2.ReadAggregateDataOverRange<decimal>("Spent", "PerHour", new DateTime(2020, 1, 1, 0, 0, 0), new DateTime(2021, 1, 1, 0, 0, 0)).ToList();
+
+        Assert.That(values.Count, Is.EqualTo(6));
+        Assert.That(values[0], Is.EqualTo(10.04m));
+    }
+
+    #region Test helpers
+    private static int SqlPort=> InMemCockroachDb.LastValidSqlPort;
+    
     // --- Rank Classification Functions --- //
     private static readonly DateTime _baseDate = new(2000, 1, 1, 0, 0, 0, DateTimeKind.Utc);
     private static long DateTimeMinutes(DateTime item) => (long)Math.Floor((item - _baseDate).TotalMinutes);
@@ -607,9 +738,10 @@ public class TriangularListTests : DbTestBase
 
     private static decimal DecimalMaxAggregate(decimal a, decimal b) => Math.Max(a,b);
     private static decimal DecimalSumAggregate(decimal a, decimal b) => a+b;
+    #endregion Test helpers
 }
 
-
+#region Test Types
 public class TestComplexType
 {
     public DateTime RecordedDate { get; init; }
@@ -801,3 +933,4 @@ public enum Geolocation: long
     Chile, Kazakhstan, Zambia, Romania, Ecuador,
     Netherlands, Somalia, Senegal, Guatemala, Chad
 }
+#endregion Test Types
